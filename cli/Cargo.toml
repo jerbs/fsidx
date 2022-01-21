@@ -2,6 +2,11 @@
 name = "fsidx-cli"
 version = "0.1.0"
 edition = "2021"
+authors = ["joachim.erbs@gmx.de"]
+license = "MIT"
+description = "Finding file names quickly with a database."
+categories = ["command-line-utilities", "filesystem"]
+keywords = ["locate"]
 
 [[bin]]
 name = "fsidx"
