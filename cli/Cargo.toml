@@ -10,7 +10,13 @@ keywords = ["locate"]
 
 [[bin]]
 name = "fsidx"
-path = "src/main.rs"
+path = "src/bin.rs"
 
 [dependencies]
+clap = "3.0.10"
 fsidx = "0.1.0"
+serde = { version = "1.0.133", features = ["derive"] }
+toml = "0.5.8"
+
+[dev-dependencies]
+indoc = "1.0.3"
