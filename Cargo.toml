@@ -1,0 +1,5 @@
+[workspace]
+members = ["cli", "fsidx"]
+
+[patch.crates-io]
+fsidx = { path = 'fsidx' }

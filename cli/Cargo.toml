@@ -1,0 +1,11 @@
+[package]
+name = "fsidx-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "fsidx"
+path = "src/main.rs"
+
+[dependencies]
+fsidx = "0.1.0"
