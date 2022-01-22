@@ -1,8 +1,6 @@
 use clap::{App, Arg, ArgMatches};
 use fsidx::FilterToken;
 use std::io::{Error, ErrorKind, Result};
-use std::io::Write;
-use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
 use crate::verbosity::{verbosity, set_verbosity};
@@ -105,7 +103,7 @@ fn locate_cli() -> App<'static> {
         .multiple_occurrences(true)
         .takes_value(false) )
     .arg(Arg::new("text")
-        .allow_invalid_utf8(true)
+        // .allow_invalid_utf8(true)
         .multiple_occurrences(true)
     )
 }
@@ -132,17 +130,6 @@ fn locate(config: Config, matches: &ArgMatches) -> Result<i32> {
     let volume_info = get_volume_info(&config)
     .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
     fsidx::locate(volume_info, filter_token);
-    
-    if let Some(texts) = matches.values_of_os("text") {
-        for text in texts {
-            if verbosity() {
-                let buf = text.as_bytes();
-                std::io::stdout().write_all(buf)?;
-                std::io::stdout().write(b"\n")?;
-            }
-        }    
-    }
-
     Ok(0)
 }
 

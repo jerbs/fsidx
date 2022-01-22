@@ -1,7 +1,7 @@
 use fastvlq::ReadVu64Ext;
 use std::fs::File;
 use std::io::{BufReader, Error, ErrorKind, Read, Result, stdout, Write};
-use super::FilterToken;
+use super::{filter, FilterToken};
 use super::VolumeInfo;
 
 pub fn locate(volume_info: Vec<VolumeInfo>, filter_token: Vec<FilterToken>) {
@@ -13,7 +13,7 @@ pub fn locate(volume_info: Vec<VolumeInfo>, filter_token: Vec<FilterToken>) {
     }
 }
 
-fn locate_volume(volume_info: &VolumeInfo, _filter: &Vec<FilterToken>) -> Result<()> {    
+fn locate_volume(volume_info: &VolumeInfo, filter: &Vec<FilterToken>) -> Result<()> {    
     let file = File::open(&volume_info.database)?;
     let mut reader = BufReader::new(file);
     let mut fourcc: [u8; 4] = [0; 4];
@@ -22,6 +22,7 @@ fn locate_volume(volume_info: &VolumeInfo, _filter: &Vec<FilterToken>) -> Result
         return Err(Error::new(ErrorKind::InvalidData, "Expected fsidx file."));
     }
     let mut path: Vec<u8> = Vec::new();
+    let filter = filter::compile(&filter);
     loop {
         let discard = match reader.read_vu64() {
             Ok(val) => val,
@@ -36,10 +37,14 @@ fn locate_volume(volume_info: &VolumeInfo, _filter: &Vec<FilterToken>) -> Result
         let mut delta = vec![0u8; length as usize];
         reader.read_exact(&mut delta)?;
         delta_decode(&mut path, discard, &delta);
-        let stdout = stdout();
-        let mut stdout = stdout.lock();
-        stdout.write_all(&path)?;
-        stdout.write_all(b"\n")?;
+        let text = String::from_utf8_lossy(&path);
+        if filter::apply(&text, &filter) {
+            let stdout = stdout();
+            let mut stdout = stdout.lock();
+            stdout.write_all(&path)?;
+            stdout.write_all(b"\n")?;
+            
+        }
     }
     Ok(())
 }
