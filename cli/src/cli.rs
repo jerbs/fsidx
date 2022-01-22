@@ -7,8 +7,8 @@ use std::path::Path;
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
 use crate::verbosity::{verbosity, set_verbosity};
 
-pub fn main() -> i32 {
-    let matches = App::new("fsidx")
+fn app_cli() -> App<'static> {
+    App::new("fsidx")
     .author("Joachim Erbs, joachim.erbs@gmx.de")
     .version(env!("CARGO_PKG_VERSION"))
     .about("Finding file names quickly with a database.")
@@ -28,7 +28,10 @@ pub fn main() -> i32 {
         .help("Print version info and exit"))
     .subcommand(locate_cli())
     .subcommand(update_cli())
-    .get_matches();
+}
+
+pub fn main() -> i32 {
+    let matches = app_cli().get_matches();
 
     set_verbosity(matches.occurrences_of("verbosity"));
 
@@ -56,7 +59,11 @@ pub fn main() -> i32 {
     let result = match matches.subcommand() {
         Some(("locate", sub_matches)) => locate(config, sub_matches),
         Some(("update", sub_matches)) => update(config, sub_matches),
-        _ => Err(Error::new(ErrorKind::Other, "Invalid command")),
+        _ => {
+            app_cli().print_help().ok();
+            println!("\n");
+            Err(Error::new(ErrorKind::Other, "Invalid command"))
+        },
     };
 
     let exit_code = match result {
