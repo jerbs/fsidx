@@ -9,3 +9,4 @@ categories = ["command-line-utilities", "filesystem"]
 keywords = ["locate"]
 
 [dependencies]
+nix = "0.23.1"
