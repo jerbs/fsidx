@@ -1,5 +1,5 @@
 use clap::{App, Arg, ArgMatches};
-use fsidx::FilterToken;
+use fsidx::{FilterToken, Settings};
 use std::io::{Error, ErrorKind, Result};
 use std::path::Path;
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
@@ -141,6 +141,6 @@ fn update_cli() -> App<'static> {
 fn update(config: Config, _matches: &ArgMatches) -> Result<i32> {
     let volume_info = get_volume_info(&config)
     .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
-    fsidx::update(volume_info);
+    fsidx::update(volume_info, Settings::WithFileSizes);
     Ok(0)
 }

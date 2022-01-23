@@ -8,16 +8,17 @@ use std::path::{Path};
 use std::thread::{self};
 use nix::sys::stat::stat;
 use walkdir::{WalkDir};
-use super::VolumeInfo;
+use super::{Settings, VolumeInfo};
 
 type GroupedVolumes = Vec<Vec<VolumeInfo>>;
 
-pub fn update(volume_info: Vec<VolumeInfo>) {
+pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings) {
     let grouped = group_volumes(volume_info);
     let mut handles = vec![];
     for group in grouped {
+        let settings = settings.clone();
         let handle = thread::spawn(|| {
-            update_volume_group(group);
+            update_volume_group(group, settings);
         });
         handles.push(handle);
     }
@@ -46,16 +47,16 @@ fn group_volumes(volume_info: Vec<VolumeInfo>) -> GroupedVolumes {
     .collect()
 }
 
-fn update_volume_group(group: Vec<VolumeInfo>) {
+fn update_volume_group(group: Vec<VolumeInfo>, settings: Settings) {
     for volume_info in group {
-        update_volume(volume_info);
+        update_volume(volume_info, settings.clone());
     }
 }
 
-fn update_volume(volume_info: VolumeInfo) {
+fn update_volume(volume_info: VolumeInfo, settings: Settings) {
     println!("Scanning: {}", volume_info.folder.display());
     
-    if let Err(err) = update_volume_impl(&volume_info) {
+    if let Err(err) = update_volume_impl(&volume_info, settings) {
         eprintln!("Error: {}", err);
         eprintln!("Scanning failed: {}", volume_info.folder.display());
     } else {
@@ -63,14 +64,14 @@ fn update_volume(volume_info: VolumeInfo) {
     }
 }
 
-fn update_volume_impl(volume_info: &VolumeInfo) -> Result<()> {
+fn update_volume_impl(volume_info: &VolumeInfo, settings: Settings) -> Result<()> {
     let db_file_name = &volume_info.database;
     let mut tmp_file_name = db_file_name.clone();
     tmp_file_name.set_extension("~");
 
 
     let mut file = File::create(&tmp_file_name)?;
-    let result = scan_folder(&mut file, &volume_info.folder);
+    let result = scan_folder(&mut file, &volume_info.folder, settings);
     drop(file);    // close file
     
     match result {
@@ -81,13 +82,17 @@ fn update_volume_impl(volume_info: &VolumeInfo) -> Result<()> {
     result
 }
 
-fn scan_folder(mut writer: &mut dyn Write, folder: &Path) -> Result<()> {
+fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings) -> Result<()> {
+    let flags: &[u8] = &[settings.clone() as u8]; 
+
     // The written file should be removed when this function returns an Err.
     // Either the device was not mounted (ErrorKind::NotFound) or writing the
     // file failed, i.e. the file content is corrupt.
     writer.write_all("fsix".as_bytes())?;
+    writer.write_all(flags)?;
     let mut previous: Vec<u8> = Vec::new();
-    for entry in WalkDir::new(folder).sort_by(|a,b| compare(a.file_name(), b.file_name())) {
+    for entry in WalkDir::new(folder)
+    .sort_by(|a,b| compare(a.file_name(), b.file_name())) {
         match entry {
             Ok(entry) => {
                 let bytes = byte_slice(entry.path());
@@ -99,6 +104,15 @@ fn scan_folder(mut writer: &mut dyn Write, folder: &Path) -> Result<()> {
                 writer.write_vu64(discard as u64)?;
                 writer.write_vu64(delta.len() as u64)?;
                 writer.write_all(&delta)?;
+
+                if settings == Settings::WithFileSizes {
+                    let size_plus_one = if let Ok(metadata) = entry.metadata() {
+                        metadata.len() + 1
+                    } else {
+                        0
+                    };
+                    writer.write_vu64(size_plus_one)?;
+                }
 
                 previous = bytes.to_vec();
             },
