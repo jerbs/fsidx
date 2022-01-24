@@ -3,7 +3,7 @@ use fastvlq::WriteVu64Ext;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{Error, ErrorKind, Result, Write};
+use std::io::{Error, ErrorKind, Result, stdout, stderr, Write};
 use std::path::{Path};
 use std::thread::{self};
 use nix::sys::stat::stat;
@@ -54,13 +54,13 @@ fn update_volume_group(group: Vec<VolumeInfo>, settings: Settings) {
 }
 
 fn update_volume(volume_info: VolumeInfo, settings: Settings) {
-    println!("Scanning: {}", volume_info.folder.display());
+    let _ = writeln!(stdout().lock(), "Scanning: {}", volume_info.folder.display());
     
     if let Err(err) = update_volume_impl(&volume_info, settings) {
-        eprintln!("Error: {}", err);
-        eprintln!("Scanning failed: {}", volume_info.folder.display());
+        let _ = writeln!(stdout().lock(), "Error: {}", err);
+        let _ = writeln!(stdout().lock(), "Scanning failed: {}", volume_info.folder.display());
     } else {
-        println!("Finished: {}", volume_info.folder.display());
+        let _ = writeln!(stdout().lock(), "Finished: {}", volume_info.folder.display());
     }
 }
 
@@ -132,8 +132,8 @@ fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings) ->
                 }
                 match error.path()
                 {
-                    Some(path) => eprintln!("Error: {} on path '{}'", error, path.display()),
-                    None => eprintln!("Error: {}", error),
+                    Some(path) => {let _ = writeln!(stderr().lock(), "Error: {} on path '{}'", error, path.display()); },
+                    None => {let _ = writeln!(stderr().lock(), "Error: {}", error); },
                 }
             },
         }

@@ -1,6 +1,6 @@
 use clap::{App, Arg, ArgMatches};
 use fsidx::{FilterToken, Settings};
-use std::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind, Result, stdout, stderr, Write};
 use std::path::Path;
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
 use crate::verbosity::{verbosity, set_verbosity};
@@ -36,21 +36,21 @@ pub fn main() -> i32 {
     if matches.is_present("version_info") {
         const VERSION: &str = env!("CARGO_PKG_VERSION");
         const NAME: &str = env!("CARGO_PKG_NAME");
-        println!("{}: Version {}", NAME, VERSION);
+        let _ = writeln!(stdout().lock(), "{}: Version {}", NAME, VERSION);
     }
 
     let config: Config = if let Some(config_file) = matches.value_of("config_file") {
         if verbosity() {
-            println!("Config File: {}", config_file);
+            let _ = writeln!(stdout().lock(), "Config File: {}", config_file);
         }
         match load_from_path(Path::new(config_file)) {
             Ok(config) => config,
-            Err(msg) => {eprintln!("{}", msg); return 1},
+            Err(msg) => {let _ = writeln!(stderr().lock(), "{}", msg); return 1},
         }
     } else {
         match find_and_load() {
             Ok(config) => config,
-            Err(msg) => {eprintln!("{}", msg); return 1},
+            Err(msg) => {let _ = writeln!(stderr().lock(), "{}", msg); return 1},
         }
     };
 
@@ -59,7 +59,7 @@ pub fn main() -> i32 {
         Some(("update", sub_matches)) => update(config, sub_matches),
         _ => {
             app_cli().print_help().ok();
-            println!("\n");
+            let _ = writeln!(stdout().lock(), "\n");
             Err(Error::new(ErrorKind::Other, "Invalid command"))
         },
     };
@@ -67,7 +67,7 @@ pub fn main() -> i32 {
     let exit_code = match result {
         Ok(exit_code) => exit_code,
         Err(err) => {
-            eprintln!("Error: {}", err);
+            let _ = writeln!(stderr().lock(), "Error: {}", err);
             1
         },
     };

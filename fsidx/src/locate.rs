@@ -2,17 +2,19 @@ use fastvlq::ReadVu64Ext;
 use std::convert::TryFrom;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufReader, Error, ErrorKind, Read, Result, stdout, Write};
+use std::io::{BufReader, Error, ErrorKind, Read, Result, stdout, stderr, Write};
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 use crate::{Settings, VolumeInfo, FilterToken, filter};
 
 
 pub fn locate(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>) {
-    for vi in &volume_info {
-        println!("Searching: {}", vi.folder.display());
+     for vi in &volume_info {
+        let _ = writeln!(stdout().lock(), "Searching: {}", vi.folder.display());
         if let Err(error) = locate_volume(vi, &filter) {
-            eprintln!("Searching '{}' failed: {}", vi.folder.display(), error);
+            if error.kind() != ErrorKind::BrokenPipe {
+                let _ = writeln!(stderr().lock(), "Searching '{}' failed: {}", vi.folder.display(), error);
+            }
         }
     }
 }
