@@ -1,5 +1,5 @@
 use clap::{App, Arg, ArgMatches};
-use fsidx::{FilterToken, Settings, UpdateSink};
+use fsidx::{FilterToken, Settings, UpdateSink, LocateSink};
 use std::io::{Error, ErrorKind, Result, stdout, stderr, Write};
 use std::path::Path;
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
@@ -129,7 +129,11 @@ fn locate(config: Config, matches: &ArgMatches) -> Result<i32> {
     let filter_token = locate_filter(matches);
     let volume_info = get_volume_info(&config)
     .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
-    fsidx::locate(volume_info, filter_token);
+    let sink = LocateSink {
+        stdout: &mut stdout(),
+        stderr: &mut stderr(),
+    };
+    fsidx::locate(volume_info, filter_token, sink);
     Ok(0)
 }
 

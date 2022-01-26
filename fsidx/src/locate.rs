@@ -2,24 +2,28 @@ use fastvlq::ReadVu64Ext;
 use std::convert::TryFrom;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufReader, Error, ErrorKind, Read, Result, stdout, stderr, Write};
+use std::io::{BufReader, Error, ErrorKind, Read, Result, Write};
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 use crate::{Settings, VolumeInfo, FilterToken, filter};
 
+pub struct LocateSink<'a> {
+    pub stdout: &'a mut dyn Write,
+    pub stderr: &'a mut dyn Write,
+}
 
-pub fn locate(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>) {
-     for vi in &volume_info {
-        let _ = writeln!(stdout().lock(), "Searching: {}", vi.folder.display());
-        if let Err(error) = locate_volume(vi, &filter) {
+pub fn locate(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, mut sink: LocateSink) {
+    for vi in &volume_info {
+        let _ = writeln!(sink.stdout, "Searching: {}", vi.folder.display());
+        if let Err(error) = locate_volume(vi, &filter, &mut sink) {
             if error.kind() != ErrorKind::BrokenPipe {
-                let _ = writeln!(stderr().lock(), "Searching '{}' failed: {}", vi.folder.display(), error);
+                let _ = sink.stderr.write_fmt(format_args!("Searching '{}' failed: {}", vi.folder.display(), error));
             }
         }
     }
 }
 
-fn locate_volume(volume_info: &VolumeInfo, filter: &Vec<FilterToken> ) -> Result<()> {    
+fn locate_volume(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, sink: &mut LocateSink) -> Result<()> {    
     let mut reader = FileIndexReader::new(&volume_info.database)?;
     let filter = filter::compile(&filter);
     loop {
@@ -28,13 +32,11 @@ fn locate_volume(volume_info: &VolumeInfo, filter: &Vec<FilterToken> ) -> Result
                 let bytes = path.as_os_str().as_bytes();
                 let text = String::from_utf8_lossy(bytes);
                 if filter::apply(&text, &filter) {
-                    let stdout = stdout();
-                    let mut stdout = stdout.lock();
-                    stdout.write_all(bytes)?;
+                    sink.stdout.write_all(bytes)?;
                     if let Some(size) = metadata.size {
-                        stdout.write_fmt(format_args!(" ({})", size))?;
+                        sink.stdout.write_fmt(format_args!(" ({})", size))?;
                     }
-                    stdout.write_all(b"\n")?;   
+                    sink.stdout.write_all(b"\n")?;   
                 }
             },
             Ok(None) => return Ok(()),
