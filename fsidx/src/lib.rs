@@ -7,4 +7,4 @@ pub use filter::FilterToken;
 pub use config::VolumeInfo;
 pub use config::Settings;
 pub use locate::locate;
-pub use update::update;
+pub use update::{update, UpdateSink};

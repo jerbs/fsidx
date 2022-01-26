@@ -3,8 +3,9 @@ use fastvlq::WriteVu64Ext;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{Error, ErrorKind, Result, stdout, stderr, Write};
+use std::io::{Error, ErrorKind, Result, Write};
 use std::path::{Path};
+use std::sync::mpsc::{channel, Sender};
 use std::thread::{self};
 use nix::sys::stat::stat;
 use walkdir::{WalkDir};
@@ -12,15 +13,37 @@ use super::{Settings, VolumeInfo};
 
 type GroupedVolumes = Vec<Vec<VolumeInfo>>;
 
-pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings) {
+pub struct UpdateSink<'a> {
+    pub stdout: &'a mut dyn Write,
+    pub stderr: &'a mut dyn Write,
+}
+
+enum Msg {
+    Info(String),
+    Error(String)
+}
+
+
+pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings, sink: UpdateSink) {
     let grouped = group_volumes(volume_info);
     let mut handles = vec![];
+    let(tx, rx) = channel();
     for group in grouped {
         let settings = settings.clone();
+        let tx = tx.clone();
         let handle = thread::spawn(|| {
-            update_volume_group(group, settings);
+            update_volume_group(group, settings, tx);
         });
         handles.push(handle);
+    }
+    drop(tx);
+    loop {
+        let recv = rx.recv();
+        match recv {
+            Ok(Msg::Info(text)) => {let _ = writeln!(sink.stdout, "{}", text);},
+            Ok(Msg::Error(text)) => {let _ = writeln!(sink.stderr, "Error: {}", text);},
+            Err(_) => {break;},
+        };
     }
     for handle in handles {
         handle.join().expect("join failed");
@@ -47,31 +70,31 @@ fn group_volumes(volume_info: Vec<VolumeInfo>) -> GroupedVolumes {
     .collect()
 }
 
-fn update_volume_group(group: Vec<VolumeInfo>, settings: Settings) {
+fn update_volume_group(group: Vec<VolumeInfo>, settings: Settings, tx: Sender<Msg>) {
     for volume_info in group {
-        update_volume(volume_info, settings.clone());
+        update_volume(volume_info, settings.clone(), &tx);
     }
 }
 
-fn update_volume(volume_info: VolumeInfo, settings: Settings) {
-    let _ = writeln!(stdout().lock(), "Scanning: {}", volume_info.folder.display());
+fn update_volume(volume_info: VolumeInfo, settings: Settings, tx: &Sender<Msg>) {
+    let _ = tx.send(Msg::Info(format!("Scanning: {}", volume_info.folder.display())));
     
-    if let Err(err) = update_volume_impl(&volume_info, settings) {
-        let _ = writeln!(stdout().lock(), "Error: {}", err);
-        let _ = writeln!(stdout().lock(), "Scanning failed: {}", volume_info.folder.display());
+    if let Err(err) = update_volume_impl(&volume_info, settings, &tx) {
+        let _ = tx.send(Msg::Error(format!("Error: {}", err)));
+        let _ = tx.send(Msg::Error(format!("Scanning failed: {}", volume_info.folder.display())));
     } else {
-        let _ = writeln!(stdout().lock(), "Finished: {}", volume_info.folder.display());
+        let _ = tx.send(Msg::Info(format!("Finished: {}", volume_info.folder.display())));
     }
 }
 
-fn update_volume_impl(volume_info: &VolumeInfo, settings: Settings) -> Result<()> {
+fn update_volume_impl(volume_info: &VolumeInfo, settings: Settings, tx: &Sender<Msg>) -> Result<()> {
     let db_file_name = &volume_info.database;
     let mut tmp_file_name = db_file_name.clone();
     tmp_file_name.set_extension("~");
 
 
     let mut file = File::create(&tmp_file_name)?;
-    let result = scan_folder(&mut file, &volume_info.folder, settings);
+    let result = scan_folder(&mut file, &volume_info.folder, settings, &tx);
     drop(file);    // close file
     
     match result {
@@ -82,7 +105,7 @@ fn update_volume_impl(volume_info: &VolumeInfo, settings: Settings) -> Result<()
     result
 }
 
-fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings) -> Result<()> {
+fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings, tx: &Sender<Msg>) -> Result<()> {
     let flags: &[u8] = &[settings.clone() as u8]; 
 
     // The written file should be removed when this function returns an Err.
@@ -132,8 +155,8 @@ fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings) ->
                 }
                 match error.path()
                 {
-                    Some(path) => {let _ = writeln!(stderr().lock(), "Error: {} on path '{}'", error, path.display()); },
-                    None => {let _ = writeln!(stderr().lock(), "Error: {}", error); },
+                    Some(path) => { let _ = tx.send(Msg::Error(format!("Error: {} on path {}", error, path.display()))); },
+                    None => { let _ = tx.send(Msg::Error(format!("Error: {}", error))); },
                 }
             },
         }
