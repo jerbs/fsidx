@@ -23,7 +23,7 @@ pub fn locate(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, mut sink: 
     }
 }
 
-fn locate_volume(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, sink: &mut LocateSink) -> Result<()> {    
+pub fn locate_volume(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, sink: &mut LocateSink) -> Result<()> {    
     let mut reader = FileIndexReader::new(&volume_info.database)?;
     let filter = filter::compile(&filter);
     loop {

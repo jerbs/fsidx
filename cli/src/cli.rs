@@ -78,6 +78,9 @@ pub fn main() -> i32 {
 fn locate_cli() -> App<'static> {
     App::new("locate")
     .about("Find matching files in the database")
+    .arg(Arg::new("mt")
+        .long("mt")
+        .takes_value(false) ) 
     .arg(Arg::new("case_sensitive")
         .short('c')
         .multiple_occurrences(true)
@@ -127,13 +130,19 @@ fn locate_filter(matches: &ArgMatches) -> Vec<FilterToken> {
 
 fn locate(config: Config, matches: &ArgMatches) -> Result<i32> {
     let filter_token = locate_filter(matches);
+    let mt = matches.is_present("mt");
     let volume_info = get_volume_info(&config)
     .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
     let sink = LocateSink {
         stdout: &mut stdout(),
         stderr: &mut stderr(),
     };
-    fsidx::locate(volume_info, filter_token, sink);
+    if mt {
+        fsidx::locate_mt(volume_info, filter_token, sink);
+
+    } else {
+        fsidx::locate(volume_info, filter_token, sink);
+    }
     Ok(0)
 }
 
