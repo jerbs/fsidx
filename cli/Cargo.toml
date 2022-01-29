@@ -15,7 +15,11 @@ path = "src/bin.rs"
 [dependencies]
 clap = "3.0.10"
 fsidx = "0.1.0"
+nix = "0.23.1"
+rustyline = "9.1.2"
 serde = { version = "1.0.133", features = ["derive"] }
+signal-hook = "0.3.13"
+splitty = "0.1.0"
 toml = "0.5.8"
 
 [dev-dependencies]

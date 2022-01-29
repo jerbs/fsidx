@@ -1,5 +1,7 @@
 use num_cpus;
 use std::io::{Result, Write};
+use std::sync::atomic::{AtomicBool};
+use std::sync::Arc;
 use std::sync::mpsc::channel;
 use std::thread::{self};
 use threadpool::ThreadPool;
@@ -39,7 +41,7 @@ impl<'a> Write for Proxy<'a> {
     }
 }
 
-pub fn locate_mt(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, sink: LocateSink) {
+pub fn locate_mt(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, sink: LocateSink, interrupt: Option<Arc<AtomicBool>>) {
     let num_cpu_cores = num_cpus::get();
     // let _ = writeln!(sink.stdout, "Num CPU Cores: {}", num_cpu_cores);
     let(tx, rx) = channel();
@@ -50,6 +52,7 @@ pub fn locate_mt(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, sink: L
             let tx = tx.clone();
             let vi = vi.clone();
             let filter = filter.clone();
+            let interrupt = interrupt.clone();
             pool.execute(move|| {
                 let ty = tx.clone();
                 let send_info  = |buf: &[u8]| {let _ = ty.send(Msg::Info(buf.to_vec()));};
@@ -60,7 +63,7 @@ pub fn locate_mt(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, sink: L
                     stdout: &mut stdout_proxy,
                     stderr: &mut stderr_proxy,
                 };
-                let _ = locate_volume(&vi, &filter, &mut inner_sink);
+                let _ = locate_volume(&vi, &filter, &mut inner_sink, interrupt);
                 let _ = stdout_proxy.flush();
                 let _ = stderr_proxy.flush();
             });

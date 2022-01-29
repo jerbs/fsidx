@@ -1,7 +1,14 @@
 use clap::{App, Arg, ArgMatches};
 use fsidx::{FilterToken, Settings, UpdateSink, LocateSink};
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
+use signal_hook::iterator::Signals;
+use signal_hook::consts::signal::SIGINT;
+use std::env;
 use std::io::{Error, ErrorKind, Result, stdout, stderr, Write};
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
 use crate::verbosity::{verbosity, set_verbosity};
 
@@ -26,6 +33,7 @@ fn app_cli() -> App<'static> {
         .help("Print version info and exit"))
     .subcommand(locate_cli())
     .subcommand(update_cli())
+    .subcommand(shell_cli())
 }
 
 pub fn main() -> i32 {
@@ -55,7 +63,8 @@ pub fn main() -> i32 {
     };
 
     let result = match matches.subcommand() {
-        Some(("locate", sub_matches)) => locate(config, sub_matches),
+        Some(("shell", sub_matches)) => shell(config, &matches, sub_matches),
+        Some(("locate", sub_matches)) => locate(&config, sub_matches, None),
         Some(("update", sub_matches)) => update(config, sub_matches),
         _ => {
             app_cli().print_help().ok();
@@ -140,14 +149,14 @@ fn locate_filter(matches: &ArgMatches) -> Vec<FilterToken> {
     if let Some(indices) = matches.indices_of("last_element") {for idx in indices {filter.push((FilterToken::LastElement, idx)) } };
     if let (Some(indices), Some(texts)) = (matches.indices_of("text"), matches.values_of("text")) {
         for (idx, text) in indices.zip(texts) {
-            filter.push((FilterToken::Text(text.to_string()), idx))
+            filter.push((FilterToken::Text(text.to_string()), idx));
         }
     }
     filter.sort_by(|(_,a), (_,b)| a.cmp(b));
     filter.into_iter().map(|(token,_)| token).collect()
 }
 
-fn locate(config: Config, matches: &ArgMatches) -> Result<i32> {
+fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<i32> {
     let filter_token = locate_filter(matches);
     let mt = matches.is_present("mt");
     let volume_info = get_volume_info(&config)
@@ -157,12 +166,79 @@ fn locate(config: Config, matches: &ArgMatches) -> Result<i32> {
         stderr: &mut stderr(),
     };
     if mt {
-        fsidx::locate_mt(volume_info, filter_token, sink);
-
+        fsidx::locate_mt(volume_info, filter_token, sink, interrupt);
     } else {
-        fsidx::locate(volume_info, filter_token, sink);
+        fsidx::locate(volume_info, filter_token, sink, interrupt);
     }
     Ok(0)
+}
+
+fn shell_cli() -> App<'static> {
+    App::new("shell")
+    .about("Open the fsidx shell to enter locate queries")
+}
+
+fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Result<i32> {
+    let interrupt = Arc::new(AtomicBool::new(false));
+    let mut signals = Signals::new(&[SIGINT])?;   // Ctrl-C
+    let interrupt_for_signal_handler = interrupt.clone();
+    std::thread::spawn(move || {
+        let interrupt = interrupt_for_signal_handler;
+        for sig in signals.forever() {
+            println!("Received signal {:?}", sig);
+            if sig == SIGINT {
+                interrupt.store(true, Ordering::Relaxed);
+            }
+        }
+    });
+    let mut rl = Editor::<()>::new();
+    let history = if let Some(db_path) = &config.db_path {
+        let history = Path::new(&db_path).join("history.txt");
+        if let Err(err) = rl.load_history(&history) {
+            if matches!(err, ReadlineError::Errno(nix::errno::Errno::ENOENT)) {
+                eprintln!("Error: Reading '{}' failed: {}", history.display(), err);
+            }
+        }
+        Some(history)
+    } else {
+        None
+    };
+    println!("Ctrl-C: Interrupt printing results");
+    println!("Ctrl-D: Terminate application");
+    loop {
+        let readline = rl.readline("> ");
+        match readline {
+            Ok(line) => {
+                rl.add_history_entry(line.as_str());
+                interrupt.store(false, Ordering::Relaxed);
+                process_shell_line(&config, matches, &line, interrupt.clone());
+            },
+            Err(ReadlineError::Interrupted) => {
+                println!("CTRL-C");
+            },
+            Err(ReadlineError::Eof) => {
+                println!("CTRL-D");
+                break
+            },
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break
+            }
+        }
+    }
+    if let Some(history) = history {
+        rl.save_history(&history).unwrap();
+    }
+    Ok(0)
+}
+
+fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interrupt: Arc<AtomicBool>) {
+    let locate_args = splitty::split_unquoted_whitespace(line);
+    let matches = match locate_cli().setting(clap::AppSettings::NoBinaryName).try_get_matches_from(locate_args) {
+        Ok(matches) => matches,
+        Err(error) => { eprintln!("Error: {}", error); return;},
+    };
+    let _ = locate(config, &matches, Some(interrupt));
 }
 
 fn update_cli() -> App<'static> {
