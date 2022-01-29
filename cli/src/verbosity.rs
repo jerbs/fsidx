@@ -6,5 +6,5 @@ pub fn verbosity() -> bool {
 }
 
 pub fn set_verbosity(v: u64) {
-    unsafe { VERBOSITY_LEVEL = (v + u64::MAX / 2) as u32; }
+    unsafe { VERBOSITY_LEVEL = v as u32; }
 }
