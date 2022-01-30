@@ -10,13 +10,16 @@ use std::sync::Arc;
 use crate::{Settings, VolumeInfo, FilterToken, filter};
 
 pub struct LocateSink<'a> {
+    pub verbosity: bool,
     pub stdout: &'a mut dyn Write,
     pub stderr: &'a mut dyn Write,
 }
 
 pub fn locate(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, mut sink: LocateSink, interrupt: Option<Arc<AtomicBool>>) {
     for vi in &volume_info {
-        let _ = writeln!(sink.stdout, "Searching: {}", vi.folder.display());
+        if sink.verbosity {
+            let _ = writeln!(sink.stdout, "Searching: {}", vi.folder.display());
+        }
         if let Err(error) = locate_volume(vi, &filter, &mut sink, interrupt.clone()) {
             if error.kind() != ErrorKind::BrokenPipe {
                 let _ = sink.stderr.write_fmt(format_args!("Searching '{}' failed: {}", vi.folder.display(), error));

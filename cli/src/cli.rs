@@ -162,6 +162,7 @@ fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBoo
     let volume_info = get_volume_info(&config)
     .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
     let sink = LocateSink {
+        verbosity: verbosity(),
         stdout: &mut stdout(),
         stderr: &mut stderr(),
     };

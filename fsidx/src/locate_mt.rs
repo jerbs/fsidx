@@ -60,6 +60,7 @@ pub fn locate_mt(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, sink: L
                 let mut stdout_proxy = Proxy::new(&send_info);
                 let mut stderr_proxy = Proxy::new(&send_error);
                 let mut inner_sink = LocateSink {
+                    verbosity: sink.verbosity,
                     stdout: &mut stdout_proxy,
                     stderr: &mut stderr_proxy,
                 };
