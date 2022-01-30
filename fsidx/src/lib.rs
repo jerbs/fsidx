@@ -7,6 +7,6 @@ mod update;
 pub use filter::FilterToken;
 pub use config::VolumeInfo;
 pub use config::Settings;
-pub use locate::{locate, LocateSink};
+pub use locate::{locate, LocateSink, SelectionInsert};
 pub use locate_mt::locate_mt;
 pub use update::{update, UpdateSink};

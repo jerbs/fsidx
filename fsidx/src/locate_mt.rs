@@ -6,11 +6,12 @@ use std::sync::mpsc::channel;
 use std::thread::{self};
 use threadpool::ThreadPool;
 use crate::{VolumeInfo, FilterToken};
-use crate::locate::{LocateSink, locate_volume};
+use crate::locate::{LocateSink, SelectionInsert, locate_volume};
 
 enum Msg {
     Info(Vec<u8>),
-    Error(Vec<u8>)
+    Error(Vec<u8>),
+    Selection(Vec<u8>, Option<u64>),
 }
 
 struct Proxy<'a> {
@@ -41,6 +42,29 @@ impl<'a> Write for Proxy<'a> {
     }
 }
 
+struct SelectionProxy<'a> {
+    send: &'a dyn Fn(Vec<u8>, Option<u64>),
+}
+
+impl<'a> SelectionProxy<'a> {
+    fn new(send: &'a dyn Fn(Vec<u8>, Option<u64>)) -> SelectionProxy<'a> {
+        SelectionProxy {
+            send,
+        }
+    }
+}
+
+impl<'a> SelectionInsert for SelectionProxy<'a> {
+    fn insert(&mut self, path: &[u8], size: Option<u64>) {
+        let buf = path.to_vec();
+        (self.send)(buf, size);
+    }
+
+    fn insert_owned(&mut self, path: Vec<u8>, size: Option<u64>) {
+        (self.send)(path, size);
+    }
+}
+
 pub fn locate_mt(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, sink: LocateSink, interrupt: Option<Arc<AtomicBool>>) {
     let num_cpu_cores = num_cpus::get();
     // let _ = writeln!(sink.stdout, "Num CPU Cores: {}", num_cpu_cores);
@@ -57,12 +81,15 @@ pub fn locate_mt(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, sink: L
                 let ty = tx.clone();
                 let send_info  = |buf: &[u8]| {let _ = ty.send(Msg::Info(buf.to_vec()));};
                 let send_error = |buf: &[u8]| {let _ = tx.send(Msg::Error(buf.to_vec()));};
+                let send_selection = |path: Vec<u8>, size: Option<u64>| {let _ = tx.send(Msg::Selection(path, size));};
                 let mut stdout_proxy = Proxy::new(&send_info);
                 let mut stderr_proxy = Proxy::new(&send_error);
+                let mut selection_proxy = SelectionProxy::new(&send_selection);
                 let mut inner_sink = LocateSink {
                     verbosity: sink.verbosity,
                     stdout: &mut stdout_proxy,
                     stderr: &mut stderr_proxy,
+                    selection: &mut selection_proxy,
                 };
                 let _ = locate_volume(&vi, &filter, &mut inner_sink, interrupt);
                 let _ = stdout_proxy.flush();
@@ -76,6 +103,7 @@ pub fn locate_mt(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, sink: L
         match recv {
             Ok(Msg::Info(text)) => {let _ = sink.stdout.write_all(&text);},
             Ok(Msg::Error(text)) => {let _ = sink.stderr.write_all(&text);},
+            Ok(Msg::Selection(path, size)) => {let _ = sink.selection.insert_owned(path, size);},
             Err(_) => {break;},
         };
     }

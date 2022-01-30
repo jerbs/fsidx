@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
+use crate::selection::Selection;
 use crate::verbosity::{verbosity, set_verbosity};
 
 fn app_cli() -> App<'static> {
@@ -157,6 +158,7 @@ fn locate_filter(matches: &ArgMatches) -> Vec<FilterToken> {
 }
 
 fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<i32> {
+    let mut selection = Selection::new();
     let filter_token = locate_filter(matches);
     let mt = matches.is_present("mt");
     let volume_info = get_volume_info(&config)
@@ -165,6 +167,7 @@ fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBoo
         verbosity: verbosity(),
         stdout: &mut stdout(),
         stderr: &mut stderr(),
+        selection: &mut selection,
     };
     if mt {
         fsidx::locate_mt(volume_info, filter_token, sink, interrupt);

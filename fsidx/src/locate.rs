@@ -13,6 +13,12 @@ pub struct LocateSink<'a> {
     pub verbosity: bool,
     pub stdout: &'a mut dyn Write,
     pub stderr: &'a mut dyn Write,
+    pub selection: &'a mut dyn SelectionInsert,
+}
+
+pub trait SelectionInsert {
+    fn insert(&mut self, path: &[u8], size: Option<u64>);
+    fn insert_owned(&mut self, path: Vec<u8>, size: Option<u64>);
 }
 
 pub fn locate(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, mut sink: LocateSink, interrupt: Option<Arc<AtomicBool>>) {
@@ -42,11 +48,7 @@ pub fn locate_volume(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, sink: 
                 let bytes = path.as_os_str().as_bytes();
                 let text = String::from_utf8_lossy(bytes);
                 if filter::apply(&text, &filter) {
-                    sink.stdout.write_all(bytes)?;
-                    if let Some(size) = metadata.size {
-                        sink.stdout.write_fmt(format_args!(" ({})", size))?;
-                    }
-                    sink.stdout.write_all(b"\n")?;   
+                    sink.selection.insert(bytes, metadata.size);
                 }
             },
             Ok(None) => return Ok(()),
