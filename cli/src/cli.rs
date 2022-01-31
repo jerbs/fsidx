@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
 use crate::selection::Selection;
+use crate::tokenizer::tokenize;
 use crate::verbosity::{verbosity, set_verbosity};
 
 fn app_cli() -> App<'static> {
@@ -237,7 +238,7 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
 }
 
 fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interrupt: Arc<AtomicBool>) {
-    let locate_args = splitty::split_unquoted_whitespace(line);
+    let locate_args = tokenize(line);
     let matches = match locate_cli().setting(clap::AppSettings::NoBinaryName).try_get_matches_from(locate_args) {
         Ok(matches) => matches,
         Err(error) => { eprintln!("Error: {}", error); return;},
