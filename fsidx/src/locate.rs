@@ -27,7 +27,9 @@ pub fn locate(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, mut sink: 
             let _ = writeln!(sink.stdout, "Searching: {}", vi.folder.display());
         }
         if let Err(error) = locate_volume(vi, &filter, &mut sink, interrupt.clone()) {
-            if error.kind() != ErrorKind::BrokenPipe {
+            let interrupt = interrupt.clone();
+            let interrupted = interrupt.map(|v| v.load(Ordering::Relaxed)).unwrap_or(false);
+            if error.kind() != ErrorKind::BrokenPipe && !interrupted{
                 let _ = sink.stderr.write_fmt(format_args!("Searching '{}' failed: {}", vi.folder.display(), error));
             }
         }
