@@ -203,7 +203,9 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
     std::thread::spawn(move || {
         let interrupt = interrupt_for_signal_handler;
         for sig in signals.forever() {
-            println!("Received signal {:?}", sig);
+            if verbosity() {
+                println!("Received signal {:?}", sig);
+            }
             if sig == SIGINT {
                 interrupt.store(true, Ordering::Relaxed);
             }
