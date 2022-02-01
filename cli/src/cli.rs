@@ -280,23 +280,31 @@ fn open(token_it: TokenIterator, selection: &Option<Selection>) -> Result<()> {
         let mut command = Command::new("open");
         let mut found_files = false;
         for token in token_it {
-            let index = token.parse::<usize>().unwrap() - 1;
-            if let Some(path) = selection.get_path(index) {
-                let path = Path::new(path);
-                if path.exists() {
-                    command.arg(path);
-                    found_files = true;
-                    let _ = stdout().write(b"Opening: '");
-                    let _ = stdout().write(path.as_os_str().as_bytes());
-                    let _ = stdout().write(b"'\n");
-                }
-                else {
-                    let _ = stderr().write(b"Error: '");
-                    let _ = stderr().write(path.as_os_str().as_bytes());
-                    let _ = stderr().write(b"' not exists. Device not mounted.\n");
+            if let Ok(index) = token.parse::<usize>() {
+                if index > 0 {
+                    let index = index - 1;
+                    if let Some(path) = selection.get_path(index) {
+                        let path = Path::new(path);
+                        if path.exists() {
+                            command.arg(path);
+                            found_files = true;
+                            let _ = stdout().write(b"Opening: '");
+                            let _ = stdout().write(path.as_os_str().as_bytes());
+                            let _ = stdout().write(b"'\n");
+                        }
+                        else {
+                            let _ = stderr().write(b"Error: '");
+                            let _ = stderr().write(path.as_os_str().as_bytes());
+                            let _ = stderr().write(b"' not exists. Device not mounted.\n");
+                        }
+                    } else {
+                        eprintln!("Error: Invalid index '{}'.", index);    
+                    }
+                } else {
+                    println!("Error: Invalid index '{}'.", index);
                 }
             } else {
-                eprintln!("Error: Invalid index '{}'.", index);
+                eprintln!("Error: Invalid index '{}'.", token);
             }
         }
         if found_files {
