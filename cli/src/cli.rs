@@ -12,6 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
+use crate::expand::{Expand, MatchRule};
 use crate::selection::{Selection, NoSelection};
 use crate::tokenizer::{tokenize, TokenIterator};
 use crate::verbosity::{verbosity, set_verbosity};
@@ -256,15 +257,18 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
 }
 
 fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Selection>) -> Result<Option<Selection>>{
-    let backslash_commmand = starts_with_backslash(line);
     let token = tokenize(line);
-    if backslash_commmand {
+    if starts_with_backslash(line) {
+        // Backslash commands:
         let mut  it = token.into_iter();
         match it.next().as_deref() {
             Some("q") if it.next().is_none() => {process::exit(0);},
-            Some("o") => {open(it, selection)?;},
+            Some("o") => {open_backslash_command(it, selection)?;},
             _ => {help();},
         }
+    } else if index_command(line) {
+        let it = token.into_iter();
+        open_index_command(config, it, selection)?;
     } else {
         let matches = match locate_cli().setting(clap::AppSettings::NoBinaryName).try_get_matches_from(token) {
             Ok(matches) => matches,
@@ -275,7 +279,7 @@ fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interr
     Ok(None)
 }
 
-fn open(token_it: TokenIterator, selection: &Option<Selection>) -> Result<()> {
+fn open_backslash_command(token_it: TokenIterator, selection: &Option<Selection>) -> Result<()> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found_files = false;
@@ -316,6 +320,28 @@ fn open(token_it: TokenIterator, selection: &Option<Selection>) -> Result<()> {
     Ok(())
 }
 
+fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Option<Selection>) -> Result<()> {
+    if let Some(selection) = selection {
+        let mut command = Command::new("open");
+        let mut found_files = false;
+        for token in token_it {
+            if let Ok(match_rule) = token.parse::<MatchRule>() {
+                let expand = Expand::new(config, match_rule, selection);
+                for path in expand {
+                    command.arg(path);
+                    found_files = true;
+                }
+            }
+        }
+        if found_files {
+            command.spawn()?;
+        }
+    } else {
+        eprintln!("Error: Run a query first.");
+    }
+    Ok(())
+}
+
 fn help() {
     println!("\\q             -- quit application");
     println!("\\o [id ...]    -- open files with id from last selection")
@@ -326,6 +352,17 @@ fn starts_with_backslash(line: &str) -> bool {
         match ch {
             ' ' | '\t' | '\n' | '\r' => (),
             '\\' => {return true;},
+            _ => {return false;},
+        }
+    }
+    false
+}
+
+fn index_command(line: &str) -> bool {
+    for ch in line.chars() {
+        match ch {
+            '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => (),
+            '.' => {return true;},
             _ => {return false;},
         }
     }
