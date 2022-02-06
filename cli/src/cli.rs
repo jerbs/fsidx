@@ -92,10 +92,10 @@ pub fn main() -> i32 {
 fn locate_cli() -> App<'static> {
     App::new("locate")
     .about("Find matching files in the database")
-    .arg(Arg::new("mt")
-        .long("mt")
-        .takes_value(false)
-        .help("Use multithreaded implementation") ) 
+    // .arg(Arg::new("mt")
+    //     .long("mt")
+    //     .takes_value(false)
+    //     .help("Use multithreaded implementation") ) 
     .arg(Arg::new("case_sensitive")
         .short('c')
         .multiple_occurrences(true)
@@ -185,7 +185,7 @@ fn locate_impl(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<Atom
         selection,
     };
     if mt {
-        fsidx::locate_mt(volume_info, filter_token, sink, interrupt);
+        // fsidx::locate_mt(volume_info, filter_token, sink, interrupt);
     } else {
         fsidx::locate(volume_info, filter_token, sink, interrupt);
     }
