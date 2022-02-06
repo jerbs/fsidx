@@ -1,8 +1,10 @@
+use std::ffi::{OsStr, OsString};
 use std::fmt::Debug;
-use std::path::PathBuf;
+use std::os::unix::prelude::OsStrExt;
+use std::path::Path;
 use std::str::FromStr;
 use crate::config::Config;
-use crate::selection::Selection;
+use crate::selection::{Selection, SelectionIter};
 
 // 421.        -- Open single selected file
 // 421..       -- Open all selected files in same directory
@@ -27,34 +29,35 @@ impl<'a> Expand<'a> {
 }
 
 impl<'a> IntoIterator for Expand<'a> {
-    type Item = PathBuf;
+    type Item = &'a Path;
 
-    type IntoIter = ExpandIterator;
+    type IntoIter = ExpandIter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
-        ExpandIterator::new(&self)
+        ExpandIter::new(self)
     }
 }
 
-pub struct ExpandIterator {
-    implementation: Box<dyn Iterator<Item=PathBuf>>,
+pub struct ExpandIter<'a> {
+    implementation: Box<dyn Iterator<Item=&'a Path> + 'a>,
 }
 
-impl<'a>  ExpandIterator {
-    fn new(expand: &Expand) -> ExpandIterator {
-        let implementation: Box<dyn Iterator<Item=PathBuf>> = match &expand.match_rule {
-            MatchRule::Index(index) => Box::new(SingleItem::new(*index, expand.selection)),
-            MatchRule::DirectoryOfSelection(index) => Box::new(DirectoryOfSelection::new(*index, expand.selection)),
-            MatchRule::DirectoryOfFileIndex(index) => Box::new(DirectoryOfFileIndex::new(*index, expand.selection, expand.config)),
-            MatchRule::DirectoryOfSelectionWithSuffix(index, suffix) => Box::new(DirectoryOfSelectionWithSuffix::new(*index, suffix, expand.selection)),
-            MatchRule::DirectoryOfFileIndexWithSuffix(index, suffix) => Box::new(DirectoryOfFileIndexWithSuffix::new(*index, suffix, expand.selection, expand.config)),
+impl<'a>  ExpandIter<'a> {
+    fn new(expand: Expand<'a>) -> ExpandIter<'a> {
+        let implementation: Box<dyn Iterator<Item=&'a Path>> = match expand.match_rule {
+            MatchRule::Index(index) => Box::new(SingleItem::new(index, expand.selection)),
+            MatchRule::DirectoryOfSelection(index) => Box::new(DirectoryOfSelection::new(index, expand.selection)),
+            MatchRule::DirectoryOfFileIndex(index) => Box::new(DirectoryOfFileIndex::new(index, expand.selection, expand.config)),
+            MatchRule::DirectoryOfSelectionWithSuffix(index, suffix) => Box::new(DirectoryOfSelectionWithSuffix::new(index, suffix, expand.selection)),
+            MatchRule::DirectoryOfFileIndexWithSuffix(index, suffix) => Box::new(DirectoryOfFileIndexWithSuffix::new(index, suffix, expand.selection, expand.config)),
         };
-        ExpandIterator { implementation }
+        ExpandIter { implementation }
+        // todo!()
     }
 }
 
-impl<'a> Iterator for ExpandIterator {
-    type Item = PathBuf;
+impl<'a> Iterator for ExpandIter<'a> {
+    type Item = &'a Path;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.implementation.next()
@@ -62,19 +65,21 @@ impl<'a> Iterator for ExpandIterator {
 }
 
 // MatchRule::Index(index)
-struct SingleItem {
-    path: Option<PathBuf>
+struct SingleItem<'a> {
+    path: Option<&'a Path>
 }
 
-impl SingleItem {
-    fn new(index: usize, selection: &Selection) -> SingleItem {
-        let path = selection.get_path(index).map(|v| v.to_owned().into());
+impl<'a> SingleItem<'a> {
+    fn new(index: usize, selection: &'a Selection) -> SingleItem<'a> {
+        let path = selection
+        .get_path(index)
+        .map(|v| v.as_ref());
         SingleItem { path }
     }
 }
 
-impl Iterator for SingleItem {
-    type Item = PathBuf;
+impl<'a> Iterator for SingleItem<'a> {
+    type Item = &'a Path;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.path.take()
@@ -82,35 +87,67 @@ impl Iterator for SingleItem {
 }
 
 // MatchRule::DirectoryOfSelection(index)
-struct DirectoryOfSelection {
+struct DirectoryOfSelection<'a> {
+    dir: Option<&'a Path>,
+    iter: SelectionIter<'a>,
 }
 
-impl DirectoryOfSelection {
-    fn new(_index: usize, _selection: &Selection) -> DirectoryOfSelection {
-        DirectoryOfSelection {}
+impl<'a> DirectoryOfSelection<'a> {
+    fn new(index: usize, selection: &Selection) -> DirectoryOfSelection {
+        let dir = if let Some(path) = selection.get_path(index) {
+            let path: &Path = path.as_ref();
+            path.parent()
+        } else {
+            None
+        };
+        let iter = selection.iter();
+        DirectoryOfSelection {
+            dir,
+            iter,
+        }
     }
 }
 
-impl Iterator for DirectoryOfSelection {
-    type Item = PathBuf;
+impl<'a> Iterator for DirectoryOfSelection<'a> {
+    type Item = &'a Path;
 
     fn next(&mut self) -> Option<Self::Item> {
-        None
+        if let Some(dir) = self.dir {
+            let dir = dir
+            .as_os_str()
+            .as_bytes();
+            loop {
+                if let Some(item) = self.iter.next() {
+                    let path = item.path.as_slice();
+                    if path.starts_with(dir) {
+                        let path = Path::new(OsStr::from_bytes(path));
+                        break Some(path);
+                    }
+                } else {
+                    break None;
+                }
+            }
+        } else {
+            None
+        }
     }
 }
 
 // MatchRule::DirectoryOfFileIndex(index)
-struct DirectoryOfFileIndex {
+struct DirectoryOfFileIndex<'a> {
+    dir: Option<&'a Path>,
 }
 
-impl DirectoryOfFileIndex {
-    fn new(_index: usize, _selection: &Selection, _config: &Config) -> DirectoryOfFileIndex {
-        DirectoryOfFileIndex {}
+impl<'a> DirectoryOfFileIndex<'a> {
+    fn new(_index: usize, _selection: &'a Selection, _config: &'a Config) -> DirectoryOfFileIndex<'a> {
+        DirectoryOfFileIndex {
+            dir: None,
+        }
     }
 }
 
-impl Iterator for DirectoryOfFileIndex {
-    type Item = PathBuf;
+impl<'a> Iterator for DirectoryOfFileIndex<'a> {
+    type Item = &'a Path;
 
     fn next(&mut self) -> Option<Self::Item> {
         None
@@ -118,35 +155,73 @@ impl Iterator for DirectoryOfFileIndex {
 }
 
 // MatchRule::DirectoryOfSelectionWithSuffix(index, suffix)
-struct DirectoryOfSelectionWithSuffix {
+struct DirectoryOfSelectionWithSuffix<'a> {
+    dir: Option<&'a Path>,
+    suffix: OsString,
+    iter: SelectionIter<'a>,
 }
 
-impl DirectoryOfSelectionWithSuffix {
-    fn new(_index: usize, _suffix: &String, _selection: &Selection) -> DirectoryOfSelectionWithSuffix {
-        DirectoryOfSelectionWithSuffix {}
+impl<'a> DirectoryOfSelectionWithSuffix<'a> {
+    fn new(index: usize, suffix: OsString, selection: &'a Selection) -> DirectoryOfSelectionWithSuffix<'a> {
+        let dir = if let Some(path) = selection.get_path(index) {
+            let path: &Path = path.as_ref();
+            path.parent()
+        } else {
+            None
+        };
+        let iter = selection.iter();
+        DirectoryOfSelectionWithSuffix {
+            dir,
+            suffix,
+            iter
+        }
     }
 }
 
-impl Iterator for DirectoryOfSelectionWithSuffix {
-    type Item = PathBuf;
+impl<'a> Iterator for DirectoryOfSelectionWithSuffix<'a> {
+    type Item = &'a Path;
 
     fn next(&mut self) -> Option<Self::Item> {
-        None
+        if let Some(dir) = self.dir {
+            let dir = dir
+            .as_os_str()
+            .as_bytes();
+            loop {
+                if let Some(item) = self.iter.next() {
+                    let path = item.path.as_slice();
+                    if path.starts_with(dir) {
+                        let path = Path::new(OsStr::from_bytes(path));
+                        if let Some(ext) = path.extension() {
+                            if ext == self.suffix {
+                                break Some(path);
+                            }    
+                        }
+                    }
+                } else {
+                    break None;
+                }
+            }
+        } else {
+            None
+        }
     }
 }
 
 // MatchRule::DirectoryOfFileIndexWithSuffix(index, suffix)
-struct DirectoryOfFileIndexWithSuffix {
+struct DirectoryOfFileIndexWithSuffix<'a> {
+    dir: Option<&'a Path>,
 }
 
-impl DirectoryOfFileIndexWithSuffix {
-    fn new(_index: usize, _suffix: &String, _selection: &Selection, _config: &Config) -> DirectoryOfFileIndexWithSuffix {
-        DirectoryOfFileIndexWithSuffix {}
+impl<'a> DirectoryOfFileIndexWithSuffix<'a> {
+    fn new(_index: usize, _suffix: OsString, _selection: &'a Selection, _config: &'a Config) -> DirectoryOfFileIndexWithSuffix<'a> {
+        DirectoryOfFileIndexWithSuffix {
+            dir: None,
+        }
     }
 }
 
-impl Iterator for DirectoryOfFileIndexWithSuffix {
-    type Item = PathBuf;
+impl<'a> Iterator for DirectoryOfFileIndexWithSuffix<'a> {
+    type Item = &'a Path;
 
     fn next(&mut self) -> Option<Self::Item> {
         None
@@ -158,8 +233,8 @@ pub enum MatchRule {
     Index(usize),
     DirectoryOfSelection(usize),
     DirectoryOfFileIndex(usize),
-    DirectoryOfSelectionWithSuffix(usize, String),
-    DirectoryOfFileIndexWithSuffix(usize, String),
+    DirectoryOfSelectionWithSuffix(usize, OsString),
+    DirectoryOfFileIndexWithSuffix(usize, OsString),
 }
 
 #[derive(PartialEq)]
@@ -202,13 +277,16 @@ impl FromStr for MatchRule {
                 (ch, State::Suffix) => {suffix.push(ch);},
             }
         }
+        if index == 0 {
+            return Err(ParseError::Invalid);
+        }
         let match_rule = match (state, dots) {
             (State::Start | State::Index, _) => {return Err(ParseError::Invalid);},
             (State::Dots                , 1) => MatchRule::Index(index),
             (State::Dots                , 2) => MatchRule::DirectoryOfSelection(index),
             (State::Dots                , 3) => MatchRule::DirectoryOfFileIndex(index),
-            (State::Suffix              , 2) => MatchRule::DirectoryOfSelectionWithSuffix(index, suffix),
-            (State::Suffix              , 3) => MatchRule::DirectoryOfFileIndexWithSuffix(index, suffix),
+            (State::Suffix              , 2) => MatchRule::DirectoryOfSelectionWithSuffix(index, OsString::from(suffix)),
+            (State::Suffix              , 3) => MatchRule::DirectoryOfFileIndexWithSuffix(index, OsString::from(suffix)),
             (_                          , _) => {return Err(ParseError::Invalid);},
         };
         Ok(match_rule)
@@ -251,6 +329,11 @@ mod tests {
     }
 
     #[test]
+    fn non_zero_index() {
+        assert_eq!("0.".parse::<MatchRule>(), Err(ParseError::Invalid));
+    }
+
+    #[test]
     fn directory_of_selection() {
         assert_eq!("123..".parse(), Ok(MatchRule::DirectoryOfSelection(123)));
     }
@@ -267,12 +350,12 @@ mod tests {
 
     #[test]
     fn directory_of_selection_with_suffix() {
-        assert_eq!("123..jpg".parse(), Ok(MatchRule::DirectoryOfSelectionWithSuffix(123, "jpg".to_string())));
+        assert_eq!("123..jpg".parse(), Ok(MatchRule::DirectoryOfSelectionWithSuffix(123, OsString::from("jpg"))));
     }
 
     #[test]
     fn directory_of_file_index_with_suffix() {
-        assert_eq!("123...jpg".parse(), Ok(MatchRule::DirectoryOfFileIndexWithSuffix(123, "jpg".to_string())));
+        assert_eq!("123...jpg".parse(), Ok(MatchRule::DirectoryOfFileIndexWithSuffix(123, OsString::from("jpg"))));
     }
 
 }
