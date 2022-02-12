@@ -2,61 +2,61 @@ use fastvlq::ReadVu64Ext;
 use std::convert::TryFrom;
 use std::ffi::OsStr;
 use std::fs::File;
-use std::io::{BufReader, Error, ErrorKind, Read, Result, Write};
+use std::io::{BufReader, Error, ErrorKind, Read, Result};
 use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use crate::{Settings, VolumeInfo, FilterToken, filter};
 
-pub struct LocateSink<'a> {
-    pub verbosity: bool,
-    pub stdout: &'a mut dyn Write,
-    pub stderr: &'a mut dyn Write,
-    pub selection: &'a mut dyn SelectionInsert,
+// use nix::sys::termios::LocalFlags;
+// use std::io::Write;
+// let _ = writeln!(sink.stdout, "Searching: {}", vi.folder.display());
+// let _ = sink.stderr.write_fmt(format_args!("Searching '{}' failed: {}", vi.folder.display(), error));
+// let _ = sink.stdout.write(b"CTRL-C\n");
+
+pub enum LocateResult<'a> {
+    Entry(&'a Path, &'a Metadata),
+    Finished,
+    Interrupted,
+    Searching(&'a Path),
+    SearchingFinished(&'a Path),
+    SearchingFailed(&'a Path, &'a Error),
 }
 
-pub trait SelectionInsert {
-    fn insert(&mut self, path: &[u8], size: Option<u64>);
-    fn insert_owned(&mut self, path: Vec<u8>, size: Option<u64>);
+pub struct Metadata {
+    pub size: Option<u64>,
 }
 
-pub fn locate(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, mut sink: LocateSink, interrupt: Option<Arc<AtomicBool>>) {
+pub fn locate<F: FnMut(LocateResult)->Result<()>>(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, mut f: F) -> Result<()> {
     for vi in &volume_info {
-        if sink.verbosity {
-            let _ = writeln!(sink.stdout, "Searching: {}", vi.folder.display());
-        }
-        if let Err(error) = locate_volume(vi, &filter, &mut sink, interrupt.clone()) {
-            //let interrupt = interrupt.clone();
-            //let interrupted = interrupt.map(|v| v.load(Ordering::Relaxed)).unwrap_or(false);
-
+        f(LocateResult::Searching(&vi.folder))?;
+        if let Err(error) = locate_volume(vi, &filter, &interrupt, &mut f) {
             if error.kind() == ErrorKind::Interrupted {
-                return
+                return Err(error);
             } else if error.kind() == ErrorKind::BrokenPipe {
-                return
+                return Err(error);
             } else {
-                let _ = sink.stderr.write_fmt(format_args!("Searching '{}' failed: {}", vi.folder.display(), error));
+                f(LocateResult::SearchingFailed(&vi.folder, &error))?;
             } 
         }
     }
+    Ok(())
 }
 
-pub fn locate_volume(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, sink: &mut LocateSink, mut interrupt: Option<Arc<AtomicBool>>) -> Result<()> {    
+pub fn locate_volume<F: FnMut(LocateResult)->Result<()>>(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, interrupt: &Option<Arc<AtomicBool>>, f: &mut F) -> Result<()> {    
     let mut reader = FileIndexReader::new(&volume_info.database)?;
     let filter = filter::compile(&filter);
     loop {
-        if let Some(interrupt) = &mut interrupt {
-            if interrupt.load(Ordering::Relaxed) {
-                let _ = sink.stdout.write(b"CTRL-C\n");
-                return Err(Error::new(ErrorKind::Interrupted, "interrupted"));
-            }
+        if interrupt.as_ref().map(|v| v.load(Ordering::Relaxed)).unwrap_or(false) {
+            return Err(Error::new(ErrorKind::Interrupted, "interrupted"));
         }
         match reader.next() {
             Ok(Some((path, metadata))) => {
                 let bytes = path.as_os_str().as_bytes();
                 let text = String::from_utf8_lossy(bytes);
                 if filter::apply(&text, &filter) {
-                    sink.selection.insert(bytes, metadata.size);
+                    f(LocateResult::Entry(path, &metadata))?;
                 }
             },
             Ok(None) => return Ok(()),
@@ -69,10 +69,6 @@ struct FileIndexReader {
     reader: BufReader<File>,
     path: Vec<u8>,
     settings: Settings,
-}
-
-struct Metadata {
-    size: Option<u64>,
 }
 
 impl FileIndexReader {

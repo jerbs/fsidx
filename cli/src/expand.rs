@@ -1,10 +1,9 @@
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fmt::Debug;
-use std::os::unix::prelude::OsStrExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::slice::Iter;
 use std::str::FromStr;
 use crate::config::Config;
-use crate::selection::{Selection, SelectionIter};
 
 // 421.        -- Open single selected file
 // 421..       -- Open all selected files in same directory
@@ -15,11 +14,11 @@ use crate::selection::{Selection, SelectionIter};
 pub struct Expand<'a> {
     config: &'a Config,
     match_rule: MatchRule,
-    selection: &'a Selection,
+    selection: &'a Vec<PathBuf>,
 }
 
 impl<'a> Expand<'a> {
-    pub fn new(config: &'a Config, match_rule: MatchRule, selection: &'a Selection) -> Expand<'a> {
+    pub fn new(config: &'a Config, match_rule: MatchRule, selection: &'a Vec<PathBuf>) -> Expand<'a> {
         Expand {
             config,
             match_rule,
@@ -70,9 +69,9 @@ struct SingleItem<'a> {
 }
 
 impl<'a> SingleItem<'a> {
-    fn new(index: usize, selection: &'a Selection) -> SingleItem<'a> {
+    fn new(index: usize, selection: &'a Vec<PathBuf>) -> SingleItem<'a> {
         let path = selection
-        .get_path(index)
+        .get(index - 1)
         .map(|v| v.as_ref());
         SingleItem { path }
     }
@@ -89,12 +88,12 @@ impl<'a> Iterator for SingleItem<'a> {
 // MatchRule::DirectoryOfSelection(index)
 struct DirectoryOfSelection<'a> {
     dir: Option<&'a Path>,
-    iter: SelectionIter<'a>,
+    iter: Iter<'a, PathBuf>,
 }
 
 impl<'a> DirectoryOfSelection<'a> {
-    fn new(index: usize, selection: &Selection) -> DirectoryOfSelection {
-        let dir = if let Some(path) = selection.get_path(index) {
+    fn new(index: usize, selection: &Vec<PathBuf>) -> DirectoryOfSelection {
+        let dir = if let Some(path) = selection.get(index - 1) {
             let path: &Path = path.as_ref();
             path.parent()
         } else {
@@ -113,14 +112,9 @@ impl<'a> Iterator for DirectoryOfSelection<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(dir) = self.dir {
-            let dir = dir
-            .as_os_str()
-            .as_bytes();
             loop {
-                if let Some(item) = self.iter.next() {
-                    let path = item.path.as_slice();
+                if let Some(path) = self.iter.next() {
                     if path.starts_with(dir) {
-                        let path = Path::new(OsStr::from_bytes(path));
                         break Some(path);
                     }
                 } else {
@@ -139,7 +133,7 @@ struct DirectoryOfFileIndex<'a> {
 }
 
 impl<'a> DirectoryOfFileIndex<'a> {
-    fn new(_index: usize, _selection: &'a Selection, _config: &'a Config) -> DirectoryOfFileIndex<'a> {
+    fn new(_index: usize, _selection: &'a Vec<PathBuf>, _config: &'a Config) -> DirectoryOfFileIndex<'a> {
         DirectoryOfFileIndex {
             dir: None,
         }
@@ -158,12 +152,12 @@ impl<'a> Iterator for DirectoryOfFileIndex<'a> {
 struct DirectoryOfSelectionWithSuffix<'a> {
     dir: Option<&'a Path>,
     suffix: OsString,
-    iter: SelectionIter<'a>,
+    iter: Iter<'a, PathBuf>,
 }
 
 impl<'a> DirectoryOfSelectionWithSuffix<'a> {
-    fn new(index: usize, suffix: OsString, selection: &'a Selection) -> DirectoryOfSelectionWithSuffix<'a> {
-        let dir = if let Some(path) = selection.get_path(index) {
+    fn new(index: usize, suffix: OsString, selection: &'a Vec<PathBuf>) -> DirectoryOfSelectionWithSuffix<'a> {
+        let dir = if let Some(path) = selection.get(index - 1) {
             let path: &Path = path.as_ref();
             path.parent()
         } else {
@@ -183,14 +177,9 @@ impl<'a> Iterator for DirectoryOfSelectionWithSuffix<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(dir) = self.dir {
-            let dir = dir
-            .as_os_str()
-            .as_bytes();
             loop {
-                if let Some(item) = self.iter.next() {
-                    let path = item.path.as_slice();
+                if let Some(path) = self.iter.next() {
                     if path.starts_with(dir) {
-                        let path = Path::new(OsStr::from_bytes(path));
                         if let Some(ext) = path.extension() {
                             if ext == self.suffix {
                                 break Some(path);
@@ -213,7 +202,7 @@ struct DirectoryOfFileIndexWithSuffix<'a> {
 }
 
 impl<'a> DirectoryOfFileIndexWithSuffix<'a> {
-    fn new(_index: usize, _suffix: OsString, _selection: &'a Selection, _config: &'a Config) -> DirectoryOfFileIndexWithSuffix<'a> {
+    fn new(_index: usize, _suffix: OsString, _selection: &'a Vec<PathBuf>, _config: &'a Config) -> DirectoryOfFileIndexWithSuffix<'a> {
         DirectoryOfFileIndexWithSuffix {
             dir: None,
         }

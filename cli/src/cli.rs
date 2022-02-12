@@ -1,5 +1,5 @@
 use clap::{App, Arg, ArgMatches};
-use fsidx::{FilterToken, Settings, UpdateSink, LocateSink, SelectionInsert};
+use fsidx::{FilterToken, Settings, UpdateSink, LocateResult, Metadata};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use signal_hook::iterator::Signals;
@@ -8,12 +8,11 @@ use std::os::unix::prelude::OsStrExt;
 use std::process::Command;
 use std::{env, process};
 use std::io::{Error, ErrorKind, Result, stdout, stderr, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
 use crate::expand::{Expand, MatchRule};
-use crate::selection::{Selection, NoSelection};
 use crate::tokenizer::{tokenize, TokenIterator};
 use crate::verbosity::{verbosity, set_verbosity};
 
@@ -161,33 +160,74 @@ fn locate_filter(matches: &ArgMatches) -> Vec<FilterToken> {
     filter.into_iter().map(|(token,_)| token).collect()
 }
 
+fn print_locate_result(res: &LocateResult) -> Result<()> {
+    match *res {
+        LocateResult::Entry(path, Metadata { size: Some(size) } ) => {
+            stdout().write_all(path.as_os_str().as_bytes())?;
+            stdout().write_fmt(format_args!(" ({})", size))?;
+            stdout().write_all(b"\n")?;
+        },
+        LocateResult::Entry(path, Metadata { size:None } ) => {
+            stdout().write_all(path.as_os_str().as_bytes())?;
+            stdout().write_all(b"\n")?;
+        },
+        LocateResult::Finished => {},
+        LocateResult::Interrupted => {
+            stdout().write(b"CTRL-C\n")?;
+        },
+        LocateResult::Searching(path) => {
+            if verbosity() {
+                stdout().write_all(b"Searching: ")?;
+                stdout().write_all(path.as_os_str().as_bytes())?;
+                stdout().write_all(b"\n")?;
+            }
+        },
+        LocateResult::SearchingFinished(path) => {
+            if verbosity() {
+                stdout().write_all(b"Searching  ")?;
+                stdout().write_all(path.as_os_str().as_bytes())?;
+                stdout().write_all(b" finished\n")?;    
+            }
+        },
+        LocateResult::SearchingFailed(path, error) => {
+            stdout().write_all(b"Searching ")?;
+            stdout().write_all(path.as_os_str().as_bytes())?;
+            stdout().write_fmt(format_args!(" failed: {}\n", error))?;
+        },
+    }
+    Ok(())
+}
+
 fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<i32> {
-    let mut selection = NoSelection::new();
-    locate_impl(config, matches, interrupt, &mut selection)?;
+    locate_impl(config, matches, interrupt, |res| {
+        print_locate_result(&res)
+    })?;
     Ok(0)
 }
 
-fn locate_interactive(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<Selection> {
-    let mut selection = Selection::new();
-    locate_impl(config, matches, interrupt, &mut selection)?;
+fn locate_interactive(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>> {
+    let mut selection = Vec::new();
+    locate_impl(config, matches, interrupt, |res| {
+        if let LocateResult::Entry(path, _) = res {
+            let pb = path.to_path_buf();
+            selection.push(pb);
+            let index = selection.len();
+            stdout().write_fmt(format_args!("{}. ", index))?;
+        } 
+        print_locate_result(&res)
+    })?;
     Ok(selection)
 }
 
-fn locate_impl(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>, selection: &mut dyn SelectionInsert) -> Result<()> {
+fn locate_impl<F: FnMut(LocateResult)->Result<()>>(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<()> {
     let filter_token = locate_filter(matches);
     let mt = matches.is_present("mt");
     let volume_info = get_volume_info(&config)
     .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
-    let sink = LocateSink {
-        verbosity: verbosity(),
-        stdout: &mut stdout(),
-        stderr: &mut stderr(),
-        selection,
-    };
     if mt {
         // fsidx::locate_mt(volume_info, filter_token, sink, interrupt);
     } else {
-        fsidx::locate(volume_info, filter_token, sink, interrupt);
+        fsidx::locate(volume_info, filter_token, interrupt, f)?;
     }
     Ok(())
 }
@@ -226,7 +266,7 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
     };
     println!("Ctrl-C: Interrupt printing results");
     println!("Ctrl-D: Terminate application");
-    let mut selection: Option<Selection> = None;
+    let mut selection: Option<Vec<PathBuf>> = None;
     loop {
         let readline = rl.readline("> ");
         match readline {
@@ -256,7 +296,7 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
     Ok(0)
 }
 
-fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Selection>) -> Result<Option<Selection>>{
+fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<Option<Vec<PathBuf>>>{
     let token = tokenize(line);
     if starts_with_backslash(line) {
         // Backslash commands:
@@ -279,7 +319,7 @@ fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interr
     Ok(None)
 }
 
-fn open_backslash_command(token_it: TokenIterator, selection: &Option<Selection>) -> Result<()> {
+fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<()> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found_files = false;
@@ -287,7 +327,7 @@ fn open_backslash_command(token_it: TokenIterator, selection: &Option<Selection>
             if let Ok(index) = token.parse::<usize>() {
                 if index > 0 {
                     let index = index - 1;
-                    if let Some(path) = selection.get_path(index) {
+                    if let Some(path) = selection.get(index) {
                         let path = Path::new(path);
                         if path.exists() {
                             command.arg(path);
@@ -320,7 +360,7 @@ fn open_backslash_command(token_it: TokenIterator, selection: &Option<Selection>
     Ok(())
 }
 
-fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Option<Selection>) -> Result<()> {
+fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<()> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found_files = false;
