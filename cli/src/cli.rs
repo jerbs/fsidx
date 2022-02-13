@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
 use crate::expand::{Expand, MatchRule};
 use crate::tokenizer::{tokenize, TokenIterator};
+use crate::tty::set_tty;
 use crate::verbosity::{verbosity, set_verbosity};
 
 fn app_cli() -> App<'static> {
@@ -238,6 +239,7 @@ fn shell_cli() -> App<'static> {
 }
 
 fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Result<i32> {
+    crate::cli::set_tty()?;
     let interrupt = Arc::new(AtomicBool::new(false));
     let mut signals = Signals::new(&[SIGINT])?;   // Ctrl-C
     let interrupt_for_signal_handler = interrupt.clone();
@@ -273,9 +275,17 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
             Ok(line) => {
                 rl.add_history_entry(line.as_str());
                 interrupt.store(false, Ordering::Relaxed);
-                if let Ok(Some(s)) = process_shell_line(&config, matches, &line, interrupt.clone(), &selection) {
-                    selection = Some(s);
-                }
+                match process_shell_line(&config, matches, &line, interrupt.clone(), &selection) {
+                    Ok(Some(s)) => {selection = Some(s);},
+                    Ok(None) => {},
+                    Err(err) => {
+                        match err.kind() {
+                            ErrorKind::Interrupted => {println!("CTRL-C");},
+                            ErrorKind::BrokenPipe => {println!("EOF");},
+                            _ => {println!("Error: {:?}", err);},
+                        }
+                    },
+                };
             },
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");

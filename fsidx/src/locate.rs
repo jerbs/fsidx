@@ -32,12 +32,10 @@ pub fn locate<F: FnMut(LocateResult)->Result<()>>(volume_info: Vec<VolumeInfo>, 
     for vi in &volume_info {
         f(LocateResult::Searching(&vi.folder))?;
         if let Err(error) = locate_volume(vi, &filter, &interrupt, &mut f) {
-            if error.kind() == ErrorKind::Interrupted {
-                return Err(error);
-            } else if error.kind() == ErrorKind::BrokenPipe {
-                return Err(error);
-            } else {
-                f(LocateResult::SearchingFailed(&vi.folder, &error))?;
+            match error.kind() {
+                ErrorKind::Interrupted => {return Err(error);},
+                ErrorKind::BrokenPipe => {return Err(error);},
+                _ => {f(LocateResult::SearchingFailed(&vi.folder, &error))?;},
             } 
         }
     }
