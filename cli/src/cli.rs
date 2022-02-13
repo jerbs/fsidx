@@ -95,7 +95,7 @@ fn locate_cli() -> App<'static> {
     // .arg(Arg::new("mt")
     //     .long("mt")
     //     .takes_value(false)
-    //     .help("Use multithreaded implementation") ) 
+    //     .help("Use multithreaded implementation") )
     .arg(Arg::new("case_sensitive")
         .short('c')
         .multiple_occurrences(true)
@@ -187,7 +187,7 @@ fn print_locate_result(res: &LocateResult) -> Result<()> {
             if verbosity() {
                 stdout().write_all(b"Searching  ")?;
                 stdout().write_all(path.as_os_str().as_bytes())?;
-                stdout().write_all(b" finished\n")?;    
+                stdout().write_all(b" finished\n")?;
             }
         },
         LocateResult::SearchingFailed(path, error) => {
@@ -214,7 +214,7 @@ fn locate_interactive(config: &Config, matches: &ArgMatches, interrupt: Option<A
             selection.push(pb);
             let index = selection.len();
             stdout().write_fmt(format_args!("{}. ", index))?;
-        } 
+        }
         print_locate_result(&res)
     })?;
     Ok(selection)
@@ -332,27 +332,16 @@ fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interr
 fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<()> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
-        let mut found_files = false;
+        let mut found = false;
         for token in token_it {
             if let Ok(index) = token.parse::<usize>() {
                 if index > 0 {
                     let index = index - 1;
                     if let Some(path) = selection.get(index) {
                         let path = Path::new(path);
-                        if path.exists() {
-                            command.arg(path);
-                            found_files = true;
-                            let _ = stdout().write(b"Opening: '");
-                            let _ = stdout().write(path.as_os_str().as_bytes());
-                            let _ = stdout().write(b"'\n");
-                        }
-                        else {
-                            let _ = stderr().write(b"Error: '");
-                            let _ = stderr().write(path.as_os_str().as_bytes());
-                            let _ = stderr().write(b"' not exists. Device not mounted.\n");
-                        }
+                        open_append(&mut command, path, &mut found)?;
                     } else {
-                        eprintln!("Error: Invalid index '{}'.", index);    
+                        eprintln!("Error: Invalid index '{}'.", index);
                     }
                 } else {
                     println!("Error: Invalid index '{}'.", index);
@@ -361,8 +350,8 @@ fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBu
                 eprintln!("Error: Invalid index '{}'.", token);
             }
         }
-        if found_files {
-            command.spawn()?;
+        if found {
+            open_spawn(&mut command)?;
         }
     } else {
         eprintln!("Error: Run a query first.");
@@ -373,21 +362,46 @@ fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBu
 fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<()> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
-        let mut found_files = false;
+        let mut found = false;
         for token in token_it {
             if let Ok(match_rule) = token.parse::<MatchRule>() {
                 let expand = Expand::new(config, match_rule, selection);
                 for path in expand {
-                    command.arg(path);
-                    found_files = true;
+                    open_append(&mut command, path, &mut found)?;
                 }
             }
         }
-        if found_files {
-            command.spawn()?;
+        if found {
+            open_spawn(&mut command)?;
         }
     } else {
         eprintln!("Error: Run a query first.");
+    }
+    Ok(())
+}
+
+fn open_append(command: &mut Command, path: &Path, found: &mut bool) -> Result<()> {
+    if path.exists() {
+        command.arg(path);
+        *found = true;
+        stdout().write(b"Opening: '")?;
+        stdout().write(path.as_os_str().as_bytes())?;
+        stdout().write(b"'\n")?;
+    }
+    else {
+        stderr().write(b"Error: '")?;
+        stderr().write(path.as_os_str().as_bytes())?;
+        stderr().write(b"' not exists. Device not mounted.\n")?;
+    }
+    Ok(())
+}
+
+fn open_spawn(command: &mut Command) -> Result<()> {
+
+    let mut child = command.spawn()?;
+    let exit_status = child.wait()?;
+    if !exit_status.success() {
+        eprintln!("Error: Open failed.")
     }
     Ok(())
 }
