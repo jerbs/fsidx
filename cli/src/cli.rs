@@ -70,7 +70,7 @@ pub fn main() -> i32 {
     let result = match matches.subcommand() {
         Some(("shell", sub_matches)) => shell(config, &matches, sub_matches),
         Some(("locate", sub_matches)) => locate(&config, sub_matches, None),
-        Some(("update", sub_matches)) => update(config, sub_matches),
+        Some(("update", _sub_matches)) => update(&config),
         _ => {
             app_cli().print_help().ok();
             let _ = writeln!(stdout().lock(), "\n");
@@ -314,6 +314,7 @@ fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interr
         match it.next().as_deref() {
             Some("q") if it.next().is_none() => {process::exit(0);},
             Some("o") => {open_backslash_command(it, selection)?;},
+            Some("u") if it.next().is_none() => {update(config)?;},
             _ => {help();},
         }
     } else if index_command(line) {
@@ -408,7 +409,8 @@ fn open_spawn(command: &mut Command) -> Result<()> {
 
 fn help() {
     println!("\\q             -- quit application");
-    println!("\\o [id ...]    -- open files with id from last selection")
+    println!("\\o [id ...]    -- open files with id from last selection");
+    println!("\\u             -- update database")
 }
 
 fn starts_with_backslash(line: &str) -> bool {
@@ -438,7 +440,7 @@ fn update_cli() -> App<'static> {
     .about("Rescan folders and update the database")
 }
 
-fn update(config: Config, _matches: &ArgMatches) -> Result<i32> {
+fn update(config: &Config) -> Result<i32> {
     let volume_info = get_volume_info(&config)
     .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
     let sink = UpdateSink {
