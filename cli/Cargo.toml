@@ -13,7 +13,7 @@ name = "fsidx"
 path = "src/bin.rs"
 
 [dependencies]
-clap = "3.0.10"
+clap = "3.1.0"
 fsidx = "0.1.0"
 libc = "0.2.117"
 nix = "0.23.1"

@@ -1,4 +1,4 @@
-use clap::{App, Arg, ArgMatches};
+use clap::{self, Arg, ArgMatches};
 use fsidx::{FilterToken, Settings, UpdateSink, LocateResult, Metadata};
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -17,8 +17,8 @@ use crate::tokenizer::{tokenize, TokenIterator};
 use crate::tty::set_tty;
 use crate::verbosity::{verbosity, set_verbosity};
 
-fn app_cli() -> App<'static> {
-    App::new("fsidx")
+fn app_cli() -> clap::Command<'static> {
+    clap::Command::new("fsidx")
     .author("Joachim Erbs, joachim.erbs@gmx.de")
     .version(env!("CARGO_PKG_VERSION"))
     .about("Finding file names quickly with a database.")
@@ -89,8 +89,8 @@ pub fn main() -> i32 {
     exit_code
 }
 
-fn locate_cli() -> App<'static> {
-    App::new("locate")
+fn locate_cli() -> clap::Command<'static> {
+    clap::Command::new("locate")
     .about("Find matching files in the database")
     // .arg(Arg::new("mt")
     //     .long("mt")
@@ -233,8 +233,8 @@ fn locate_impl<F: FnMut(LocateResult)->Result<()>>(config: &Config, matches: &Ar
     Ok(())
 }
 
-fn shell_cli() -> App<'static> {
-    App::new("shell")
+fn shell_cli() -> clap::Command<'static> {
+    clap::Command::new("shell")
     .about("Open the fsidx shell to enter locate queries")
 }
 
@@ -321,7 +321,7 @@ fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interr
         let it = token.into_iter();
         open_index_command(config, it, selection)?;
     } else {
-        let matches = match locate_cli().setting(clap::AppSettings::NoBinaryName).try_get_matches_from(token) {
+        let matches = match locate_cli().no_binary_name(true).try_get_matches_from(token) {
             Ok(matches) => matches,
             Err(error) => { eprintln!("Error: {}", error); return Ok(None);},
         };
@@ -433,8 +433,8 @@ fn index_command(line: &str) -> bool {
     false
 }
 
-fn update_cli() -> App<'static> {
-    App::new("update")
+fn update_cli() -> clap::Command<'static> {
+    clap::Command::new("update")
     .about("Rescan folders and update the database")
 }
 
