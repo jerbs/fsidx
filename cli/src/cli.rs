@@ -266,8 +266,7 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
     } else {
         None
     };
-    println!("Ctrl-C: Interrupt printing results");
-    println!("Ctrl-D: Terminate application");
+    short_help();
     let mut selection: Option<Vec<PathBuf>> = None;
     loop {
         let readline = rl.readline("> ");
@@ -315,7 +314,8 @@ fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interr
             Some("q") if it.next().is_none() => {process::exit(0);},
             Some("o") => {open_backslash_command(it, selection)?;},
             Some("u") if it.next().is_none() => {update(config)?;},
-            _ => {help();},
+            Some("h") => {help();},
+            _ => {short_help();},
         }
     } else if index_command(line) {
         let it = token.into_iter();
@@ -405,10 +405,25 @@ fn open_spawn(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
+fn short_help() {
+    println!("Ctrl-C: Interrupt printing results");
+    println!("Ctrl-D: Terminate application");
+    println!("\\h             -- print detailed help")
+}
+
 fn help() {
+    short_help();
     println!("\\q             -- quit application");
     println!("\\o [id ...]    -- open files with id from last selection");
-    println!("\\u             -- update database")
+    println!("\\u             -- update database");
+    println!("Open search results with index commands:");
+    println!("  12.           -- Open single selected file");
+    println!("  12..          -- Open all selected files in same directory");
+    println!("  12...         -- Open all files in same directory");
+    println!("  12..jpg       -- Open all selected files in same directory with suffix");
+    println!("  12...jpg      -- Open all files in same directory with suffix");
+    println!("Quoting:");
+    println!("  \"some text\"   -- Search text with space");
 }
 
 fn starts_with_backslash(line: &str) -> bool {
