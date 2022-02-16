@@ -63,14 +63,14 @@ pub fn locate_volume<F: FnMut(LocateResult)->Result<()>>(volume_info: &VolumeInf
     };
 }
 
-struct FileIndexReader {
+pub struct FileIndexReader {
     reader: BufReader<File>,
     path: Vec<u8>,
     settings: Settings,
 }
 
 impl FileIndexReader {
-    fn new(database: &Path) -> Result<FileIndexReader>
+    pub fn new(database: &Path) -> Result<FileIndexReader>
     {
         let file = File::open(database)?;
         let mut reader = BufReader::new(file);
@@ -87,7 +87,7 @@ impl FileIndexReader {
         Ok(FileIndexReader { reader, path, settings } )
     }
 
-    fn next(&mut self) -> Result<Option<(&Path, Metadata)>> {
+    pub fn next(&mut self) -> Result<Option<(&Path, Metadata)>> {
         let discard = match self.reader.read_vu64() {
             Ok(val) => val,
             Err(err) => {

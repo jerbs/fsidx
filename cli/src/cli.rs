@@ -367,9 +367,7 @@ fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Opti
         for token in token_it {
             if let Ok(match_rule) = token.parse::<MatchRule>() {
                 let expand = Expand::new(config, match_rule, selection);
-                for path in expand {
-                    open_append(&mut command, path, &mut found)?;
-                }
+                expand.foreach(|path| open_append(&mut command, path, &mut found))?;
             }
         }
         if found {
