@@ -325,7 +325,9 @@ fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interr
             Ok(matches) => matches,
             Err(error) => { eprintln!("Error: {}", error); return Ok(None);},
         };
-        return locate_interactive(config, &matches, Some(interrupt)).map(|v| Some(v));
+        if matches.args_present() {
+            return locate_interactive(config, &matches, Some(interrupt)).map(|v| Some(v));
+        }
     }
     Ok(None)
 }
