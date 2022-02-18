@@ -161,26 +161,28 @@ fn locate_filter(matches: &ArgMatches) -> Vec<FilterToken> {
     filter.into_iter().map(|(token,_)| token).collect()
 }
 
-fn locate_filter_interactive(mut token_it: TokenIterator) -> Vec<FilterToken> {
+fn locate_filter_interactive(mut token_it: TokenIterator) -> Result<Vec<FilterToken>> {
     let mut filter: Vec<FilterToken> = Vec::new();
     while let Some(token) = token_it.next() {
-        if let Some(filter_token) = match token {
-            Token::Text(text) => Some(FilterToken::Text(text)),
-            Token::Backslash(text) => Some(FilterToken::Text(text)),
+        let filter_token= match token {
+            Token::Text(text) => FilterToken::Text(text),
+            Token::Backslash(text) => FilterToken::Text(text),
             Token::Option(text) => match text.as_str() {
-                "case_sensitive"   | "c" => Some(FilterToken::CaseSensitive),
-                "case_insensitive" | "i" => Some(FilterToken::CaseInSensitive),
-                "any_order"        | "a" => Some(FilterToken::AnyOrder),
-                "same_order"       | "s" => Some(FilterToken::SameOrder),
-                "whole_path"       | "w" => Some(FilterToken::WholePath),
-                "last_element"     | "l" => Some(FilterToken::LastElement),
-                _  => {eprintln!("Error: Invalid option `{}`", text); None},
+                "case_sensitive"   | "c" => FilterToken::CaseSensitive,
+                "case_insensitive" | "i" => FilterToken::CaseInSensitive,
+                "any_order"        | "a" => FilterToken::AnyOrder,
+                "same_order"       | "s" => FilterToken::SameOrder,
+                "whole_path"       | "w" => FilterToken::WholePath,
+                "last_element"     | "l" => FilterToken::LastElement,
+                _  => {
+                    let msg = format!("Invalid option: -{}", text);
+                    return Err(Error::new(ErrorKind::InvalidInput, msg));
+                },
             },
-         } {
-            filter.push(filter_token);
-        }
+        };
+        filter.push(filter_token);
     }
-    filter
+    Ok(filter)
 }
 
 fn print_locate_result(res: &LocateResult) -> Result<()> {
@@ -231,7 +233,7 @@ fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBoo
 
 fn locate_interactive(config: &Config, token_it: TokenIterator, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>> {
     let mut selection = Vec::new();
-    let filter_token = locate_filter_interactive(token_it);
+    let filter_token = locate_filter_interactive(token_it)?;
     locate_impl(config, filter_token, interrupt, |res| {
         if let LocateResult::Entry(path, _) = res {
             let pb = path.to_path_buf();
@@ -240,7 +242,7 @@ fn locate_interactive(config: &Config, token_it: TokenIterator, interrupt: Optio
             stdout().write_fmt(format_args!("{}. ", index))?;
         }
         print_locate_result(&res)
-    })?;
+    })?;    
     Ok(selection)
 }
 
