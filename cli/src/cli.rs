@@ -446,24 +446,37 @@ fn open_spawn(command: &mut Command) -> Result<()> {
 }
 
 fn short_help() {
-    println!("Ctrl-C: Interrupt printing results");
-    println!("Ctrl-D: Terminate application");
-    println!("\\h             -- print detailed help")
+    println!(r#"  Ctrl-C: Interrupt printing results"#);
+    println!(r#"  Ctrl-D: Terminate application"#);
+    println!(r#"Commands:"#);
+    println!(r#"  \h               -- print detailed help"#)
 }
 
 fn help() {
     short_help();
-    println!("\\q             -- quit application");
-    println!("\\o [id ...]    -- open files with id from last selection");
-    println!("\\u             -- update database");
-    println!("Open search results with index commands:");
-    println!("  12.           -- Open single selected file");
-    println!("  12..          -- Open all selected files in same directory");
-    println!("  12...         -- Open all files in same directory");
-    println!("  12..jpg       -- Open all selected files in same directory with suffix");
-    println!("  12...jpg      -- Open all files in same directory with suffix");
-    println!("Quoting:");
-    println!("  \"some text\"   -- Search text with space");
+    println!(r#"  \q               -- quit application"#);
+    println!(r#"  \o [id ...]      -- open files with id from last selection"#);
+    println!(r#"  \u               -- update database"#);
+    println!(r#"Searching the file system index:"#);
+    println!(r#"  text             -- Search for any path containing 'text'"#);
+    println!(r#"  foo bar          -- Path must contains all strings in any order"#);
+    println!(r#"  "foo bar"        -- Search for text with spaces"#);
+    println!(r#"  "\""  or  ""\"   -- Search for a double quote"#);
+    println!(r#"  "-"   or  ""-    -- Search for a dash"#);
+    println!(r#"  "\\"  or  ""\\   -- Search for a backslash"#);
+    println!(r#"Search options:"#);
+    println!(r#"  -case_sensitive    or  -c   -- Subsequent [text] arguments are matched case sensitive"#);
+    println!(r#"  -case_insensitive  or  -i   -- Subsequent [text] arguments are matched case insensitive"#);
+    println!(r#"  -any_order         or  -a   -- Subsequent [text] arguments may  match in any order"#);
+    println!(r#"  -same_order        or  -s   -- Subsequent [text] arguments must match in the same order"#);
+    println!(r#"  -whole_path        or  -a   -- Subsequent [text] arguments may  appear in the whole path"#);
+    println!(r#"  -last_element      or  -l   -- Subsequent [text] arguments must appear in the last element only"#);
+    println!(r#"Open search results with index commands:"#);
+    println!(r#"  12.           -- Open single selected file"#);
+    println!(r#"  12..          -- Open all selected files in same directory"#);
+    println!(r#"  12...         -- Open all files in same directory"#);
+    println!(r#"  12..jpg       -- Open all selected files in same directory with suffix"#);
+    println!(r#"  12...jpg      -- Open all files in same directory with suffix"#);
 }
 
 fn update_cli() -> clap::Command<'static> {
