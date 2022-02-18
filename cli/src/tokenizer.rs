@@ -6,10 +6,17 @@ pub fn tokenize<'a>(text: &'a str) -> Tokenizer<'a> {
 
 pub struct Tokenizer<'a> {
     text: &'a str,
-} 
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Token {
+    Text(String),
+    Backslash(String),
+    Option(String),
+}
 
 impl<'a> IntoIterator for Tokenizer<'a> {
-    type Item = String;
+    type Item = Token;
 
     type IntoIter = TokenIterator<'a>;
 
@@ -25,34 +32,46 @@ pub struct TokenIterator<'a> {
 }
 
 impl<'a> Iterator for TokenIterator<'a> {
-    type Item = String;
+    type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut item = String::new();
         let mut in_token = false;
         let mut quoted = false;
         let mut backslashed = false;
+        let mut backslash_command = false;
+        let mut option_string = false;
         for (pos, ch) in self.remainder.char_indices() {
             let mut done = false;
             // println!("- {}, {}", pos, ch);
             match (ch,                     in_token, quoted, backslashed) {
-                (' ' | '\t' | '\n' | '\r',    false,  false,       false) => {},                        // Leading whitespaces
-                (' ' | '\t' | '\n' | '\r',     true,  false,       false) => {done = true;},            // Trailing whitespaces
-                ('\\'                    ,        _,      _,       false) => {backslashed = true;},     // A backslash
-                ('"'                     ,    false,      _,       false) => {quoted = true;},          // Start of quoted string
-                ('"'                     ,     true,      _,       false) => {quoted = false;},         // End of quoted string
+                (' ' | '\t' | '\n' | '\r',    false,  false,       false) => {},                                               // Leading whitespaces
+                (' ' | '\t' | '\n' | '\r',     true,  false,       false) => {done = true;},                                   // Trailing whitespaces
+                ('\\'                    ,     true,      _,       false) => {backslashed = true;},                            // A backslash within quotes
+                ('\\'                    ,    false,      _,       false) => {backslashed = true; backslash_command = true;},  // Start of a backslash command
+                ('-'                     ,    false,      _,       false) => {option_string = true;},                          // Start of an option
+                ('"'                     ,     true,   true,       false) => {quoted = false;},                                // End of quoted string
+                ('"'                     ,        _,      _,       false) => {quoted = true; in_token = true;},                // Start of quoted string
                 ('"'                     ,        _,      _,        true) => {item.push('"'); backslashed = false;},                       // Backslash escaped quote
                 (ch                 ,        _,      _,        true) => {item.push(map(ch)); in_token = true; backslashed = false;},  // A backslashed character
                 (ch                 ,        _,      _,       false) => {item.push(ch); in_token = true;},                               // Any character
             }
             if done {
                 self.remainder = &self.remainder[pos..];
-                return Some(item);
+                return match (backslash_command, option_string) {
+                    (true, _) => Some(Token::Backslash(item)),
+                    (_, true) => Some(Token::Option(item)),
+                    (_, _) => Some(Token::Text(item)),
+                };
             }
         }
         self.remainder = "";
         if !item.is_empty() {
-            Some(item)
+            return match (backslash_command, option_string) {
+                (true, _) => Some(Token::Backslash(item)),
+                (_, true) => Some(Token::Option(item)),
+                (_, _) => Some(Token::Text(item)),
+            };
         } else {
             None
         }
@@ -77,62 +96,120 @@ mod tests {
     fn splitting_on_whitespace() {
         let text = indoc! { r#"This text is split on white spaces. 안녕하세요 end"# };
         let mut tokenizer = tokenize(text).into_iter();
-        assert_eq!(Some("This".to_string()), tokenizer.next());
-        assert_eq!(Some("text".to_string()), tokenizer.next());
-        assert_eq!(Some("is".to_string()), tokenizer.next());
-        assert_eq!(Some("split".to_string()), tokenizer.next());
-        assert_eq!(Some("on".to_string()), tokenizer.next());
-        assert_eq!(Some("white".to_string()), tokenizer.next());
-        assert_eq!(Some("spaces.".to_string()), tokenizer.next());
-        assert_eq!(Some("안녕하세요".to_string()), tokenizer.next());
-        assert_eq!(Some("end".to_string()), tokenizer.next());
+        assert_eq!(Some(Token::Text("This".to_string())), tokenizer.next());
+        assert_eq!(Some(Token::Text("text".to_string())), tokenizer.next());
+        assert_eq!(Some(Token::Text("is".to_string())), tokenizer.next());
+        assert_eq!(Some(Token::Text("split".to_string())), tokenizer.next());
+        assert_eq!(Some(Token::Text("on".to_string())), tokenizer.next());
+        assert_eq!(Some(Token::Text("white".to_string())), tokenizer.next());
+        assert_eq!(Some(Token::Text("spaces.".to_string())), tokenizer.next());
+        assert_eq!(Some(Token::Text("안녕하세요".to_string())), tokenizer.next());
+        assert_eq!(Some(Token::Text("end".to_string())), tokenizer.next());
         assert_eq!(None, tokenizer.next());
     }
 
     #[test]
     fn for_loop() {
-        let mut tokens: Vec<String> = Vec::new();
+        let mut tokens: Vec<Token> = Vec::new();
         let text = indoc! { r#"This text is split on white spaces."# };
         let tokenizer = tokenize(text);
         for token in tokenizer {
             // println!("- {}", token);
             tokens.push(token);
         }
-        assert_eq!(tokens, vec!["This", "text", "is", "split", "on", "white", "spaces."])
+        assert_eq!(tokens, vec![
+            Token::Text("This".to_string()),
+            Token::Text("text".to_string()),
+            Token::Text("is".to_string()),
+            Token::Text("split".to_string()),
+            Token::Text("on".to_string()),
+            Token::Text("white".to_string()),
+            Token::Text("spaces.".to_string())
+            ])
     }
 
     #[test]
     fn quoted_string() {
         let text = indoc! { r#"Herr "Max Mustermann""# };
         let tokens: Vec<_> = tokenize(text).into_iter().collect();
-        assert_eq!(tokens, vec!["Herr", "Max Mustermann"]);
+        assert_eq!(tokens, vec![
+            Token::Text("Herr".to_string()),
+            Token::Text("Max Mustermann".to_string())
+            ]);
     }
 
     #[test]
     fn joined_quoted_string() {
         let text = indoc! { r#"Herr "Max ""Mustermann""# };
         let tokens: Vec<_> = tokenize(text).into_iter().collect();
-        assert_eq!(tokens, vec!["Herr", "Max Mustermann"]);
+        assert_eq!(tokens, vec![
+            Token::Text("Herr".to_string()),
+            Token::Text("Max Mustermann".to_string())
+            ]);
     }
 
     #[test]
     fn multiple_quoted_string() {
         let text = indoc! { r#"Herr "Max ""Mustermann" "Peter Müller""# };
         let tokens: Vec<_> = tokenize(text).into_iter().collect();
-        assert_eq!(tokens, vec!["Herr", "Max Mustermann", "Peter Müller"]);
+        assert_eq!(tokens, vec![
+            Token::Text("Herr".to_string()),
+            Token::Text("Max Mustermann".to_string()),
+            Token::Text("Peter Müller".to_string())
+            ]);
     }
 
     #[test]
     fn escaped_quotes() {
         let text = indoc! { r#"This is a \"token\" with quotes."# };
         let tokens: Vec<_> = tokenize(text).into_iter().collect();
-        assert_eq!(tokens, vec!["This", "is", "a", "\"token\"", "with", "quotes."]);
+        assert_eq!(tokens, vec![
+            Token::Text("This".to_string()),
+            Token::Text("is".to_string()),
+            Token::Text("a".to_string()),
+            Token::Backslash("\"token\"".to_string()),
+            Token::Text("with".to_string()),
+            Token::Text("quotes.".to_string())
+            ]);
+    }
+
+    #[test]
+    fn quoted_escaped_quotes() {
+        let text = indoc! { r#"This is a "\"token\"" with quotes."# };
+        let tokens: Vec<_> = tokenize(text).into_iter().collect();
+        assert_eq!(tokens, vec![
+            Token::Text("This".to_string()),
+            Token::Text("is".to_string()),
+            Token::Text("a".to_string()),
+            Token::Text("\"token\"".to_string()),
+            Token::Text("with".to_string()),
+            Token::Text("quotes.".to_string())
+            ]);
     }
 
     #[test]
     fn backslahed_characters() {
-        let text = indoc! { r#"\a\b\c"123" 12\ 34 a"bc"de\"fg"# };
+        let text = indoc! { r#"\a\b\c"123" 12\ 34 a"bc"de\"fg \hi " \hi"# };
         let tokens: Vec<_> = tokenize(text).into_iter().collect();
-        assert_eq!(tokens, vec!["abc123", "12 34", "abcde\"fg"]);
+        assert_eq!(tokens, vec![
+            Token::Backslash("abc123".to_string()),
+            Token::Text("12 34".to_string()),
+            Token::Text("abcde\"fg".to_string()),
+            Token::Backslash("hi".to_string()),
+            Token::Text(" hi".to_string()),
+            ]);
+    }
+
+    #[test]
+    fn option_strings() {
+        let text = indoc! { r#"-a-b-c"123" 12- 34 a"bc"de-"fg -hi " -hi"# };
+        let tokens: Vec<_> = tokenize(text).into_iter().collect();
+        assert_eq!(tokens, vec![
+            Token::Option("a-b-c123".to_string()),
+            Token::Text("12-".to_string()),
+            Token::Text("34".to_string()),
+            Token::Text("abcde-fg -hi ".to_string()),
+            Token::Option("hi".to_string()),
+            ]);
     }
 }

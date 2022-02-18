@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
 use crate::expand::{Expand, MatchRule};
-use crate::tokenizer::{tokenize, TokenIterator};
+use crate::tokenizer::{tokenize, TokenIterator, Token};
 use crate::tty::set_tty;
 use crate::verbosity::{verbosity, set_verbosity};
 
@@ -161,6 +161,28 @@ fn locate_filter(matches: &ArgMatches) -> Vec<FilterToken> {
     filter.into_iter().map(|(token,_)| token).collect()
 }
 
+fn locate_filter_interactive(mut token_it: TokenIterator) -> Vec<FilterToken> {
+    let mut filter: Vec<FilterToken> = Vec::new();
+    while let Some(token) = token_it.next() {
+        if let Some(filter_token) = match token {
+            Token::Text(text) => Some(FilterToken::Text(text)),
+            Token::Backslash(text) => Some(FilterToken::Text(text)),
+            Token::Option(text) => match text.as_str() {
+                "case_sensitive"   | "c" => Some(FilterToken::CaseSensitive),
+                "case_insensitive" | "i" => Some(FilterToken::CaseInSensitive),
+                "any_order"        | "a" => Some(FilterToken::AnyOrder),
+                "same_order"       | "s" => Some(FilterToken::SameOrder),
+                "whole_path"       | "w" => Some(FilterToken::WholePath),
+                "last_element"     | "l" => Some(FilterToken::LastElement),
+                _  => {eprintln!("Error: Invalid option `{}`", text); None},
+            },
+         } {
+            filter.push(filter_token);
+        }
+    }
+    filter
+}
+
 fn print_locate_result(res: &LocateResult) -> Result<()> {
     match *res {
         LocateResult::Entry(path, Metadata { size: Some(size) } ) => {
@@ -200,15 +222,17 @@ fn print_locate_result(res: &LocateResult) -> Result<()> {
 }
 
 fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<i32> {
-    locate_impl(config, matches, interrupt, |res| {
+    let filter_token = locate_filter(matches);
+    locate_impl(config, filter_token, interrupt, |res| {
         print_locate_result(&res)
     })?;
     Ok(0)
 }
 
-fn locate_interactive(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>> {
+fn locate_interactive(config: &Config, token_it: TokenIterator, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>> {
     let mut selection = Vec::new();
-    locate_impl(config, matches, interrupt, |res| {
+    let filter_token = locate_filter_interactive(token_it);
+    locate_impl(config, filter_token, interrupt, |res| {
         if let LocateResult::Entry(path, _) = res {
             let pb = path.to_path_buf();
             selection.push(pb);
@@ -220,17 +244,10 @@ fn locate_interactive(config: &Config, matches: &ArgMatches, interrupt: Option<A
     Ok(selection)
 }
 
-fn locate_impl<F: FnMut(LocateResult)->Result<()>>(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<()> {
-    let filter_token = locate_filter(matches);
-    let mt = matches.is_present("mt");
+fn locate_impl<F: FnMut(LocateResult)->Result<()>>(config: &Config, filter_token: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<()> {
     let volume_info = get_volume_info(&config)
     .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
-    if mt {
-        // fsidx::locate_mt(volume_info, filter_token, sink, interrupt);
-    } else {
-        fsidx::locate(volume_info, filter_token, interrupt, f)?;
-    }
-    Ok(())
+    fsidx::locate(volume_info, filter_token, interrupt, f)
 }
 
 fn shell_cli() -> clap::Command<'static> {
@@ -238,7 +255,7 @@ fn shell_cli() -> clap::Command<'static> {
     .about("Open the fsidx shell to enter locate queries")
 }
 
-fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Result<i32> {
+fn shell(config: Config, _matches: &ArgMatches, _sub_matches: &ArgMatches) -> Result<i32> {
     crate::cli::set_tty()?;
     let interrupt = Arc::new(AtomicBool::new(false));
     let mut signals = Signals::new(&[SIGINT])?;   // Ctrl-C
@@ -247,7 +264,7 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
         let interrupt = interrupt_for_signal_handler;
         for sig in signals.forever() {
             if verbosity() {
-                println!("Received signal {:?}", sig);
+                println!("Received signal {}", sig);
             }
             if sig == SIGINT {
                 interrupt.store(true, Ordering::Relaxed);
@@ -274,14 +291,14 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
             Ok(line) => {
                 rl.add_history_entry(line.as_str());
                 interrupt.store(false, Ordering::Relaxed);
-                match process_shell_line(&config, matches, &line, interrupt.clone(), &selection) {
+                match process_shell_line(&config, &line, interrupt.clone(), &selection) {
                     Ok(Some(s)) => {selection = Some(s);},
                     Ok(None) => {},
                     Err(err) => {
                         match err.kind() {
                             ErrorKind::Interrupted => {println!("CTRL-C");},
                             ErrorKind::BrokenPipe => {println!("EOF");},
-                            _ => {println!("Error: {:?}", err);},
+                            _ => {println!("Error: {}", err);},
                         }
                     },
                 };
@@ -294,7 +311,7 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
                 break
             },
             Err(err) => {
-                println!("Error: {:?}", err);
+                println!("Error: {}", err);
                 break
             }
         }
@@ -305,31 +322,34 @@ fn shell(config: Config, matches: &ArgMatches, _sub_matches: &ArgMatches) -> Res
     Ok(0)
 }
 
-fn process_shell_line(config: &Config, _matches: &ArgMatches, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<Option<Vec<PathBuf>>>{
-    let token = tokenize(line);
-    if starts_with_backslash(line) {
-        // Backslash commands:
-        let mut  it = token.into_iter();
-        match it.next().as_deref() {
-            Some("q") if it.next().is_none() => {process::exit(0);},
-            Some("o") => {open_backslash_command(it, selection)?;},
-            Some("u") if it.next().is_none() => {update(config)?;},
-            Some("h") => {help();},
+fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<Option<Vec<PathBuf>>>{
+    let mut token_it = tokenize(line).into_iter();
+    if let Some(Token::Backslash(command)) = token_it.next() {
+        match command.as_str() {
+            "q" if token_it.next().is_none() => {process::exit(0);},
+            "o" => {open_backslash_command(token_it, selection)?;},
+            "u" if token_it.next().is_none() => {update(config)?;},
+            "h" => {help();},
             _ => {short_help();},
-        }
-    } else if index_command(line) {
-        let it = token.into_iter();
-        open_index_command(config, it, selection)?;
-    } else {
-        let matches = match locate_cli().no_binary_name(true).try_get_matches_from(token) {
-            Ok(matches) => matches,
-            Err(error) => { eprintln!("Error: {}", error); return Ok(None);},
         };
-        if matches.args_present() {
-            return locate_interactive(config, &matches, Some(interrupt)).map(|v| Some(v));
+        return Ok(None);
+    }
+    let mut token_it = tokenize(line).into_iter();
+    if let Some(Token::Text(first)) = token_it.next() {
+        if let Ok(_) = first.parse::<MatchRule>() {
+            let token_it = tokenize(line).into_iter();
+            open_index_command(config, token_it, selection)?;
+            return Ok(None);
         }
     }
-    Ok(None)
+    if tokenize(line).into_iter().next().is_some() {
+        return locate_interactive(
+            config,
+            tokenize(line).into_iter(),
+            Some(interrupt)).map(|v| Some(v));    
+    } else {
+        return Ok(None);
+    }
 }
 
 fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<()> {
@@ -337,20 +357,30 @@ fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBu
         let mut command = Command::new("open");
         let mut found = false;
         for token in token_it {
-            if let Ok(index) = token.parse::<usize>() {
-                if index > 0 {
-                    let index = index - 1;
-                    if let Some(path) = selection.get(index) {
-                        let path = Path::new(path);
-                        open_append(&mut command, path, &mut found)?;
+            match token {
+                crate::tokenizer::Token::Text(text) => {
+                    if let Ok(index) = text.parse::<usize>() {
+                        if index > 0 {
+                            let index = index - 1;
+                            if let Some(path) = selection.get(index) {
+                                let path = Path::new(path);
+                                open_append(&mut command, path, &mut found)?;
+                            } else {
+                                eprintln!("Error: Invalid index '{}'.", index);
+                            }
+                        } else {
+                            println!("Error: Invalid index '{}'.", index);
+                        }
                     } else {
-                        eprintln!("Error: Invalid index '{}'.", index);
+                        eprintln!("Error: Invalid index '{}'.", text);
                     }
-                } else {
-                    println!("Error: Invalid index '{}'.", index);
-                }
-            } else {
-                eprintln!("Error: Invalid index '{}'.", token);
+                },
+                crate::tokenizer::Token::Backslash(text) => {
+                    eprintln!("Error: No backslash command '\\{}' expected.", text);
+                },
+                crate::tokenizer::Token::Option(text) => {
+                    eprintln!("Error: Invalid option '-{}'.", text);
+                },
             }
         }
         if found {
@@ -367,10 +397,16 @@ fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Opti
         let mut command = Command::new("open");
         let mut found = false;
         for token in token_it {
-            if let Ok(match_rule) = token.parse::<MatchRule>() {
-                let expand = Expand::new(config, match_rule, selection);
-                expand.foreach(|path| open_append(&mut command, path, &mut found))?;
-            }
+            match token {
+                crate::tokenizer::Token::Text(text) => {
+                    if let Ok(match_rule) = text.parse::<MatchRule>() {
+                        let expand = Expand::new(config, match_rule, selection);
+                        expand.foreach(|path| open_append(&mut command, path, &mut found))?;
+                    }
+                },
+                crate::tokenizer::Token::Backslash(_) => {},
+                crate::tokenizer::Token::Option(_) => {},
+            };
         }
         if found {
             open_spawn(&mut command)?;
@@ -426,28 +462,6 @@ fn help() {
     println!("  12...jpg      -- Open all files in same directory with suffix");
     println!("Quoting:");
     println!("  \"some text\"   -- Search text with space");
-}
-
-fn starts_with_backslash(line: &str) -> bool {
-    for ch in line.chars() {
-        match ch {
-            ' ' | '\t' | '\n' | '\r' => (),
-            '\\' => {return true;},
-            _ => {return false;},
-        }
-    }
-    false
-}
-
-fn index_command(line: &str) -> bool {
-    for ch in line.chars() {
-        match ch {
-            '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' => (),
-            '.' => {return true;},
-            _ => {return false;},
-        }
-    }
-    false
 }
 
 fn update_cli() -> clap::Command<'static> {
