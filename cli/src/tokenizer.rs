@@ -49,7 +49,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                 (' ' | '\t' | '\n' | '\r',     true,  false,       false) => {done = true;},                                   // Trailing whitespaces
                 ('\\'                    ,     true,      _,       false) => {backslashed = true;},                            // A backslash within quotes
                 ('\\'                    ,    false,      _,       false) => {backslashed = true; backslash_command = true;},  // Start of a backslash command
-                ('-'                     ,    false,      _,       false) => {option_string = true;},                          // Start of an option
+                ('-'                     ,    false,      _,       false) => {option_string = true; in_token = true;},         // Start of an option
                 ('"'                     ,     true,   true,       false) => {quoted = false;},                                // End of quoted string
                 ('"'                     ,        _,      _,       false) => {quoted = true; in_token = true;},                // Start of quoted string
                 ('"'                     ,        _,      _,        true) => {item.push('"'); backslashed = false;},                       // Backslash escaped quote
@@ -58,6 +58,7 @@ impl<'a> Iterator for TokenIterator<'a> {
             }
             if done {
                 self.remainder = &self.remainder[pos..];
+                if item == "" {option_string = false; item = "-".to_string();}
                 return match (backslash_command, option_string) {
                     (true, _) => Some(Token::Backslash(item)),
                     (_, true) => Some(Token::Option(item)),
@@ -66,7 +67,8 @@ impl<'a> Iterator for TokenIterator<'a> {
             }
         }
         self.remainder = "";
-        if !item.is_empty() {
+        if in_token || backslashed || option_string {
+            if item == "" {option_string = false; item = "-".to_string();}
             return match (backslash_command, option_string) {
                 (true, _) => Some(Token::Backslash(item)),
                 (_, true) => Some(Token::Option(item)),
@@ -210,6 +212,25 @@ mod tests {
             Token::Text("34".to_string()),
             Token::Text("abcde-fg -hi ".to_string()),
             Token::Option("hi".to_string()),
+            ]);
+    }
+
+    #[test]
+    fn single_dash_is_not_an_option() {
+        let text = indoc! { r#"abc - def"# };
+        let tokens: Vec<_> = tokenize(text).into_iter().collect();
+        assert_eq!(tokens, vec![
+            Token::Text("abc".to_string()),
+            Token::Text("-".to_string()),
+            Token::Text("def".to_string()),
+            ]);
+    }
+    #[test]
+    fn just_a_single_dash() {
+        let text = indoc! { r#"-"# };
+        let tokens: Vec<_> = tokenize(text).into_iter().collect();
+        assert_eq!(tokens, vec![
+            Token::Text("-".to_string()),
             ]);
     }
 }

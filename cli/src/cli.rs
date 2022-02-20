@@ -475,6 +475,7 @@ fn help() {
     println!(r#"  -same_order        or  -s   -- Subsequent [text] arguments must match in the same order"#);
     println!(r#"  -whole_path        or  -a   -- Subsequent [text] arguments may  appear in the whole path"#);
     println!(r#"  -last_element      or  -l   -- Subsequent [text] arguments must appear in the last element only"#);
+    println!(r#"  -                           -- Not an option. This matches a dash."#);
     println!(r#"Open search results with index commands:"#);
     println!(r#"  12.           -- Open single selected file"#);
     println!(r#"  12..          -- Open all selected files in same directory"#);
