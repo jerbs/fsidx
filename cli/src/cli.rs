@@ -187,12 +187,30 @@ fn locate_filter_interactive(mut token_it: TokenIterator) -> Result<Vec<FilterTo
     Ok(filter)
 }
 
+fn print_size(stdout: &mut StandardStream, size: u64) -> Result<()> {
+    let text = size.to_string();
+    let bytes = text.bytes();
+    let len = bytes.len();
+    for (i, ch) in bytes.into_iter().enumerate() {
+        if i > 0 {
+            match (len - i) % 3 {
+                0 => {stdout.write_all(b".")?;}
+                _ => {}
+            }
+        }
+        stdout.write(&[ch])?;
+    }
+    Ok(())
+}
+
 fn print_locate_result(stdout: &mut StandardStream, res: &LocateResult) -> Result<()> {
     match *res {
         LocateResult::Entry(path, Metadata { size: Some(size) } ) => {
             stdout.write_all(path.as_os_str().as_bytes())?;
             stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
-            stdout.write_fmt(format_args!(" ({})", size))?;
+            stdout.write_all(b" (")?;
+            print_size(stdout, *size)?;
+            stdout.write_all(b")")?;
             stdout.set_color(&ColorSpec::new())?;
             stdout.write_all(b"\n")?;
         },
