@@ -460,10 +460,14 @@ fn help() {
     println!(r#"Searching the file system index:"#);
     println!(r#"  text             -- Search for any path containing 'text'"#);
     println!(r#"  foo bar          -- Path must contains all strings in any order"#);
-    println!(r#"  "foo bar"        -- Search for text with spaces"#);
-    println!(r#"  "\""  or  ""\"   -- Search for a double quote"#);
-    println!(r#"  "-"   or  ""-    -- Search for a dash"#);
-    println!(r#"  "\\"  or  ""\\   -- Search for a backslash"#);
+    println!(r#"  "foo bar"        -- Match text with spaces"#);
+    println!(r#"  "ab cb"          -- Match "ab cd", "ab-cd", "ab_cd" and "abcd""#);
+    println!(r#"  ab\ cb"          -- Match "ab cd", "ab-cd", "ab_cd" and "abcd""#);
+    println!(r#"  ab-cb            -- Match "ab cd", "ab-cd", "ab_cd" and "abcd""#);
+    println!(r#"  ab_cb            -- Match "ab cd", "ab-cd", "ab_cd" and "abcd""#);
+    println!(r#"  "\""  or  ""\"   -- Match double quote"#);
+    println!(r#"  "-"   or  ""-    -- Match dash"#);
+    println!(r#"  "\\"  or  ""\\   -- Match backslash"#);
     println!(r#"Search options:"#);
     println!(r#"  -case_sensitive    or  -c   -- Subsequent [text] arguments are matched case sensitive"#);
     println!(r#"  -case_insensitive  or  -i   -- Subsequent [text] arguments are matched case insensitive"#);
