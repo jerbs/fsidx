@@ -1,4 +1,4 @@
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum FilterToken {
     Text(String),
     Next(String),
@@ -98,12 +98,12 @@ pub fn apply(text: &str, filter: &[FilterToken]) -> bool {
         if ! match token {
             FilterToken::Text(pattern) if  b_case_sensitive &&  b_same_order &&  b_last_element => if let Some(npos) = last_text[pos..].find(pattern)       {pos = pos + npos + pattern.len(); true} else {false},
             FilterToken::Text(pattern) if !b_case_sensitive &&  b_same_order &&  b_last_element => if let Some(npos) = lower_last_text[pos..].find(pattern) {pos = pos + npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if  b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = last_text.find(pattern)              {pos = pos + npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if !b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = lower_last_text.find(pattern)        {pos = pos + npos + pattern.len(); true} else {false},
+            FilterToken::Text(pattern) if  b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = last_text.find(pattern)              {pos =       npos + pattern.len(); true} else {false},
+            FilterToken::Text(pattern) if !b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = lower_last_text.find(pattern)        {pos =       npos + pattern.len(); true} else {false},
             FilterToken::Text(pattern) if  b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = text[pos..].find(pattern)            {pos = pos + npos + pattern.len(); true} else {false},
             FilterToken::Text(pattern) if !b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = lower_text[pos..].find(pattern)      {pos = pos + npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if  b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = text.find(pattern)                   {pos = pos + npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if !b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = lower_text.find(pattern)             {pos = pos + npos + pattern.len(); true} else {false},
+            FilterToken::Text(pattern) if  b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = text.find(pattern)                   {pos =       npos + pattern.len(); true} else {false},
+            FilterToken::Text(pattern) if !b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = lower_text.find(pattern)             {pos =       npos + pattern.len(); true} else {false},
             FilterToken::Next(pattern) if  b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &text, &back_tracking); index = s.index; pos = s.pos; true},  // TODO: use destructuring_assignment
             FilterToken::Next(pattern) if !b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &lower_text, &back_tracking); index = s.index; pos = s.pos; true},
             FilterToken::Text(_) => false,
@@ -277,5 +277,39 @@ mod tests {
         // 0xC3, 0xA4: ä
         // println!("{:02X?}", text.bytes());
         assert_eq!(apply(text, &compile(&[FilterToken::Text("a-b".to_string())])), false);
+    }
+
+    #[test]
+    fn position_calculation_same_order() {
+        let text = "              a            bc";
+        for a in &[FilterToken::CaseInSensitive, FilterToken::CaseInSensitive] {
+            for b in &[FilterToken::WholePath, FilterToken::LastElement] {
+                assert_eq!(apply(text, &[
+                    a.clone(),
+                    b.clone(),
+                    FilterToken::SameOrder,
+                    FilterToken::Text("a".to_string()),
+                    FilterToken::Text("b".to_string()),
+                    FilterToken::Next("c".to_string())
+                ]), true);
+            }
+        }
+    }
+
+    #[test]
+    fn position_calculation_any_order() {
+        let text = "              bc            a";
+        for a in &[FilterToken::CaseInSensitive, FilterToken::CaseInSensitive] {
+            for b in &[FilterToken::WholePath, FilterToken::LastElement] {
+                assert_eq!(apply(text, &[
+                    a.clone(),
+                    b.clone(),
+                    FilterToken::AnyOrder,
+                    FilterToken::Text("a".to_string()),
+                    FilterToken::Text("b".to_string()),
+                    FilterToken::Next("c".to_string())
+                ]), true);
+            }
+        }
     }
 }
