@@ -47,11 +47,13 @@ fn prepare_backtracking(filter: Vec<FilterToken>) -> Vec<FilterToken> {
     result
 }
 
-fn expand_smart_spaces(text: String, b_same_order: bool, filter: &mut Vec<FilterToken>) {
+fn expand_smart_spaces(text: String, mut b_same_order: bool, filter: &mut Vec<FilterToken>) {
     let mut first = true;
+    println!("b_stored_same_order = {}", b_same_order);
     let b_stored_same_order = b_same_order;
     for part in text.split(&[' ', '-', '_']) {
-        if !first {
+        if !first && !b_same_order {
+            b_same_order = true;
             filter.push(FilterToken::SameOrder);
         }
         if first {
@@ -61,7 +63,7 @@ fn expand_smart_spaces(text: String, b_same_order: bool, filter: &mut Vec<Filter
             filter.push(FilterToken::Next(part.to_string()));
         }
     }
-    if !b_stored_same_order {
+    if !b_stored_same_order && b_same_order {
         filter.push(FilterToken::AnyOrder);
     }
 }
@@ -311,5 +313,23 @@ mod tests {
                 ]), true);
             }
         }
+    }
+
+    #[test]
+    fn compile_text_with_spaces() {
+        let actual = compile( &[
+            FilterToken::Text("a b c d".to_string()),
+            FilterToken::Text("e".to_string()),
+        ] );
+        let expected: Vec<FilterToken> = vec![
+            FilterToken::Text("a".to_string()),
+            FilterToken::SameOrder,
+            FilterToken::Next("b".to_string()),
+            FilterToken::Next("c".to_string()),
+            FilterToken::Next("d".to_string()),
+            FilterToken::AnyOrder,
+            FilterToken::Text("e".to_string()),
+        ];
+        assert_eq!(actual, expected);
     }
 }
