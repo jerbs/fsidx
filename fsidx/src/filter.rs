@@ -49,18 +49,19 @@ fn prepare_backtracking(filter: Vec<FilterToken>) -> Vec<FilterToken> {
 
 fn expand_smart_spaces(text: String, mut b_same_order: bool, filter: &mut Vec<FilterToken>) {
     let mut first = true;
-    println!("b_stored_same_order = {}", b_same_order);
     let b_stored_same_order = b_same_order;
     for part in text.split(&[' ', '-', '_']) {
-        if !first && !b_same_order {
-            b_same_order = true;
-            filter.push(FilterToken::SameOrder);
-        }
-        if first {
-            filter.push(FilterToken::Text(part.to_string()));
-            first = false;
-        } else {
-            filter.push(FilterToken::Next(part.to_string()));
+        if !part.is_empty() {
+            if !first && !b_same_order {
+                b_same_order = true;
+                filter.push(FilterToken::SameOrder);
+            }
+            if first {
+                filter.push(FilterToken::Text(part.to_string()));
+                first = false;
+            } else {
+                filter.push(FilterToken::Next(part.to_string()));
+            }    
         }
     }
     if !b_stored_same_order && b_same_order {
@@ -332,4 +333,19 @@ mod tests {
         ];
         assert_eq!(actual, expected);
     }
+
+    #[test]
+    fn remove_empty_strings_after_expanding_smart_spaces() {
+        let actual = compile(&[FilterToken::Text("- a-b c- -d -".to_string())]);
+        let expected = vec![
+            FilterToken::Text("a".to_string()),
+            FilterToken::SameOrder,
+            FilterToken::Next("b".to_string()),
+            FilterToken::Next("c".to_string()),
+            FilterToken::Next("d".to_string()),
+            FilterToken::AnyOrder,
+        ];
+        assert_eq!(actual, expected);
+    }
+
 }
