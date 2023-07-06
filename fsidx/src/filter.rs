@@ -1,71 +1,94 @@
+use glob::{Pattern, MatchOptions, PatternError};
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum FilterToken {
     Text(String),
-    Next(String),
     CaseSensitive,
     CaseInSensitive,    // default
     AnyOrder,           // default
     SameOrder,
     WholePath,          // default
     LastElement,
-    SmartSpaces(bool),  // default: on  
+    SmartSpaces(bool),  // default: on
+    RequireLiteralSeparator(bool),  // default: off
+    RequireLiteralLeadingDot(bool), // default: off
+    Smart,
+    Glob,
 }
 
-pub fn compile(filter: &[FilterToken]) -> Vec<FilterToken> {
-    let filter = prepare_case_insensitive(filter);
-    let filter = prepare_backtracking(filter);
-    filter
+#[derive(Clone, Debug, PartialEq)]
+pub enum CompiledFilterToken {
+    Glob(Pattern, MatchOptions),
+    SmartText(String),
+    SmartNext(String),
+    CaseSensitive,
+    CaseInSensitive,    // default
+    AnyOrder,           // default
+    SameOrder,
+    WholePath,          // default
+    LastElement,
 }
 
-fn prepare_case_insensitive(filter: &[FilterToken]) -> Vec<FilterToken> {
-    let mut b_case_sensitive = false;
-    let filter: Vec<FilterToken> = filter.iter().map( |token|
-        match token {
-            FilterToken::CaseSensitive   => {b_case_sensitive = true; token.clone()},
-            FilterToken::CaseInSensitive => {b_case_sensitive = false; token.clone()},
-            FilterToken::Text(text) if b_case_sensitive == false => FilterToken::Text(text.to_lowercase()),
-            FilterToken::Next(_text) => panic!(),
-            _ => token.clone(),
-        }
-    ).collect();
-    filter
+#[derive(Clone, Debug, PartialEq)]
+enum Mode {
+    Smart,
+    Glob,
 }
 
-fn prepare_backtracking(filter: Vec<FilterToken>) -> Vec<FilterToken> {
+pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, PatternError> {
     let mut result = Vec::new();
-    let mut b_smart_spaces = true;
-    let mut b_same_order = false;
+    let mut mode: Mode = Mode::Smart;
+    let mut case_sensitive = false;
+    let mut smart_spaces = true;
+    let mut same_order = false;
+    let mut match_options = MatchOptions {
+        case_sensitive,
+        require_literal_separator: false,
+        require_literal_leading_dot: false,
+    };
     for token in filter {
         match token {
-            FilterToken::SmartSpaces(on) => {b_smart_spaces = on;},
-            FilterToken::SameOrder => {b_same_order = true; result.push(token);}
-            FilterToken::AnyOrder => {b_same_order = false; result.push(token);}
-            FilterToken::Text(text) if b_smart_spaces => {expand_smart_spaces(text, b_same_order, &mut result)},
-            _ => result.push(token),
+            FilterToken::CaseSensitive   => { case_sensitive = true; match_options.case_sensitive = true; result.push(CompiledFilterToken::CaseSensitive); },
+            FilterToken::CaseInSensitive => { case_sensitive = false; match_options.case_sensitive = false; result.push(CompiledFilterToken::CaseInSensitive); },
+            FilterToken::Text(text) if mode == Mode::Smart &&  case_sensitive &&  smart_spaces => { expand_smart_spaces(text.clone(), same_order, &mut result); },
+            FilterToken::Text(text) if mode == Mode::Smart &&  case_sensitive && !smart_spaces => { result.push(CompiledFilterToken::SmartText(text.clone())); },
+            FilterToken::Text(text) if mode == Mode::Smart && !case_sensitive &&  smart_spaces => { expand_smart_spaces(text.to_lowercase(), same_order, &mut result); },
+            FilterToken::Text(text) if mode == Mode::Smart && !case_sensitive && !smart_spaces => { result.push(CompiledFilterToken::SmartText(text.to_lowercase())); },
+            FilterToken::Text(text) if mode == Mode::Glob => { result.push(CompiledFilterToken::Glob(Pattern::new(text.as_str())?, match_options.clone())) },
+            FilterToken::Text(_) => { todo!(); },   // Getting a warning without this line.
+            FilterToken::AnyOrder => { same_order = false; result.push(CompiledFilterToken::AnyOrder); }
+            FilterToken::SameOrder => { same_order = true; result.push(CompiledFilterToken::SameOrder); }
+            FilterToken::WholePath => { result.push(CompiledFilterToken::WholePath); },
+            FilterToken::LastElement => { result.push(CompiledFilterToken::LastElement); },
+            FilterToken::SmartSpaces(on) => { smart_spaces = *on; },
+            FilterToken::RequireLiteralSeparator(on) => { match_options.require_literal_separator = *on; },
+            FilterToken::RequireLiteralLeadingDot(on) => {match_options.require_literal_leading_dot = *on; },
+            FilterToken::Smart => { mode = Mode::Smart; },
+            FilterToken::Glob => { mode = Mode::Glob; },
         }
     }
-    result
+    Ok(result)
 }
 
-fn expand_smart_spaces(text: String, mut b_same_order: bool, filter: &mut Vec<FilterToken>) {
+fn expand_smart_spaces(text: String, mut b_same_order: bool, filter: &mut Vec<CompiledFilterToken>) {
     let mut first = true;
     let b_stored_same_order = b_same_order;
     for part in text.split(&[' ', '-', '_']) {
         if !part.is_empty() {
             if !first && !b_same_order {
                 b_same_order = true;
-                filter.push(FilterToken::SameOrder);
+                filter.push(CompiledFilterToken::SameOrder);
             }
             if first {
-                filter.push(FilterToken::Text(part.to_string()));
+                filter.push(CompiledFilterToken::SmartText(part.to_string()));
                 first = false;
             } else {
-                filter.push(FilterToken::Next(part.to_string()));
+                filter.push(CompiledFilterToken::SmartNext(part.to_string()));
             }    
         }
     }
     if !b_stored_same_order && b_same_order {
-        filter.push(FilterToken::AnyOrder);
+        filter.push(CompiledFilterToken::AnyOrder);
     }
 }
 
@@ -74,7 +97,7 @@ struct State {
     pos: usize
 }
 
-pub fn apply(text: &str, filter: &[FilterToken]) -> bool {
+pub fn apply(text: &str, filter: &[CompiledFilterToken]) -> bool {
     let lower_text: String = text.to_lowercase();
     let (last_text, lower_last_text) = if let Some(pos_last_slash) = text.rfind('/') {
         let last_text = &text[pos_last_slash+1..];
@@ -84,7 +107,7 @@ pub fn apply(text: &str, filter: &[FilterToken]) -> bool {
         (text, &lower_text[..])
     };
     
-    let mut pos: usize = 0;
+    let mut pos: usize = 0;     // FIXME: Do I need to split this into an whole path position and a last element position? Add a test that switches between the two modes.
     let mut index = 0;
     let mut b_case_sensitive = false;
     let mut b_same_order = false;
@@ -94,30 +117,30 @@ pub fn apply(text: &str, filter: &[FilterToken]) -> bool {
     let mut back_tracking = State { index: 0, pos: 0 };
     while index < filter_len {
         let token = &filter[index];
-        if let FilterToken::Text(_) = token {
+        if let CompiledFilterToken::SmartText(_) = token {
             back_tracking = State { index, pos };
         }
         index = index + 1;
         if ! match token {
-            FilterToken::Text(pattern) if  b_case_sensitive &&  b_same_order &&  b_last_element => if let Some(npos) = last_text[pos..].find(pattern)       {pos = pos + npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if !b_case_sensitive &&  b_same_order &&  b_last_element => if let Some(npos) = lower_last_text[pos..].find(pattern) {pos = pos + npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if  b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = last_text.find(pattern)              {pos =       npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if !b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = lower_last_text.find(pattern)        {pos =       npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if  b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = text[pos..].find(pattern)            {pos = pos + npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if !b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = lower_text[pos..].find(pattern)      {pos = pos + npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if  b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = text.find(pattern)                   {pos =       npos + pattern.len(); true} else {false},
-            FilterToken::Text(pattern) if !b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = lower_text.find(pattern)             {pos =       npos + pattern.len(); true} else {false},
-            FilterToken::Next(pattern) if  b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &text, &back_tracking); index = s.index; pos = s.pos; true},  // TODO: use destructuring_assignment
-            FilterToken::Next(pattern) if !b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &lower_text, &back_tracking); index = s.index; pos = s.pos; true},
-            FilterToken::Text(_) => false,
-            FilterToken::Next(_) => false,
-            FilterToken::CaseSensitive => {b_case_sensitive = true; true},
-            FilterToken::CaseInSensitive => {b_case_sensitive = false; true},
-            FilterToken::AnyOrder => {b_same_order = false; true},
-            FilterToken::SameOrder => {b_same_order = true; true},
-            FilterToken::WholePath => {b_last_element = false; true},
-            FilterToken::LastElement => {b_last_element = true; true},
-            FilterToken::SmartSpaces(_) => true,
+            CompiledFilterToken::SmartText(pattern) if  b_case_sensitive &&  b_same_order &&  b_last_element => if let Some(npos) = last_text[pos..].find(pattern)       {pos = pos + npos + pattern.len(); true} else {false},
+            CompiledFilterToken::SmartText(pattern) if !b_case_sensitive &&  b_same_order &&  b_last_element => if let Some(npos) = lower_last_text[pos..].find(pattern) {pos = pos + npos + pattern.len(); true} else {false},
+            CompiledFilterToken::SmartText(pattern) if  b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = last_text.find(pattern)              {pos =       npos + pattern.len(); true} else {false},
+            CompiledFilterToken::SmartText(pattern) if !b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = lower_last_text.find(pattern)        {pos =       npos + pattern.len(); true} else {false},
+            CompiledFilterToken::SmartText(pattern) if  b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = text[pos..].find(pattern)            {pos = pos + npos + pattern.len(); true} else {false},
+            CompiledFilterToken::SmartText(pattern) if !b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = lower_text[pos..].find(pattern)      {pos = pos + npos + pattern.len(); true} else {false},
+            CompiledFilterToken::SmartText(pattern) if  b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = text.find(pattern)                   {pos =       npos + pattern.len(); true} else {false},
+            CompiledFilterToken::SmartText(pattern) if !b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = lower_text.find(pattern)             {pos =       npos + pattern.len(); true} else {false},
+            CompiledFilterToken::SmartNext(pattern) if  b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &text, &back_tracking); index = s.index; pos = s.pos; true},  // TODO: use destructuring_assignment
+            CompiledFilterToken::SmartNext(pattern) if !b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &lower_text, &back_tracking); index = s.index; pos = s.pos; true},
+            CompiledFilterToken::SmartText(_) => false,
+            CompiledFilterToken::SmartNext(_) => false,
+            CompiledFilterToken::CaseSensitive => {b_case_sensitive = true; true},
+            CompiledFilterToken::CaseInSensitive => {b_case_sensitive = false; true},
+            CompiledFilterToken::AnyOrder => {b_same_order = false; true},
+            CompiledFilterToken::SameOrder => {b_same_order = true; true},
+            CompiledFilterToken::WholePath => {b_last_element = false; true},
+            CompiledFilterToken::LastElement => {b_last_element = true; true},
+            CompiledFilterToken::Glob(pattern, options) => pattern.matches_with(text, *options),
         } {
             return false
         }
@@ -164,11 +187,12 @@ mod tests {
     static S4: &str = "OpQrStUvWxYz/IjKlMn/AbCdEfGh/vier";
     static S5: &str = "/klmn";
     static S6: &str = "/xyz";
+    static S7: &str = "/path/to/hidden/.file.txt";
 
-    static DATA: [&str; 7] = [S0, S1, S2, S3, S4, S5, S6];
+    static DATA: [&str; 8] = [S0, S1, S2, S3, S4, S5, S6, S7];
 
     fn process(flt: &[FilterToken]) -> Vec<String> {
-        let flt = compile(flt);
+        let flt = compile(flt).unwrap();
         DATA.iter().filter(|entry: &&&str| apply(entry, &flt)).map(|x: &&str| String::from(*x)).collect()
     }
 
@@ -177,12 +201,12 @@ mod tests {
 
     #[test]
     fn all_with_empty_string() {
-        assert_eq!(process(&[t("")]), [S0, S1, S2, S3, S4, S5, S6]);
+        assert_eq!(process(&[t("")]), [S0, S1, S2, S3, S4, S5, S6, S7]);
     }
 
     #[test]
     fn all_with_empty_list() {
-        assert_eq!(process(&[]), [S0, S1, S2, S3, S4, S5, S6]);
+        assert_eq!(process(&[]), [S0, S1, S2, S3, S4, S5, S6, S7]);
     }
 
     #[test]
@@ -244,32 +268,32 @@ mod tests {
 
     #[test]
     fn continue_after_last_match() {
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string())])), true);
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string()), FilterToken::Text("foo".to_string())])), false);
-        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string()), FilterToken::Text("baz".to_string())])), true);
-        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::Text("foo baz".to_string())])), false);
-        assert_eq!(apply("fOO bar baZ", &compile(&[FilterToken::Text("Foo Bar".to_string())])), true);
-        assert_eq!(apply("foo foo", &compile(&[FilterToken::Text("foo foo".to_string())])), true);
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::Text("foo foo".to_string())])), false);
-        assert_eq!(apply("foo-foo", &compile(&[FilterToken::Text("foo foo".to_string())])), true);
-        assert_eq!(apply("foo_foo", &compile(&[FilterToken::Text("foo foo".to_string())])), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string()), FilterToken::Text("foo".to_string())]).unwrap()), false);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string()), FilterToken::Text("baz".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::Text("foo baz".to_string())]).unwrap()), false);
+        assert_eq!(apply("fOO bar baZ", &compile(&[FilterToken::Text("Foo Bar".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo foo", &compile(&[FilterToken::Text("foo foo".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::Text("foo foo".to_string())]).unwrap()), false);
+        assert_eq!(apply("foo-foo", &compile(&[FilterToken::Text("foo foo".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo_foo", &compile(&[FilterToken::Text("foo foo".to_string())]).unwrap()), true);
     }
 
     #[test]
     fn smart_space() {
-        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("foo baz".to_string())])), false);
-        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("bar abc".to_string())])), true);
-        assert_eq!(apply("foo-bar-abc-baz", &compile(&[FilterToken::Text("bar abc".to_string())])), true);
-        assert_eq!(apply("foo_bar_abc_baz", &compile(&[FilterToken::Text("bar abc".to_string())])), true);
-        assert_eq!(apply("foo_bar_abc_baz", &compile(&[FilterToken::Text("bar-abc".to_string())])), true);
-        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("bar_abc".to_string())])), true);
+        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("foo baz".to_string())]).unwrap()), false);
+        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("bar abc".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo-bar-abc-baz", &compile(&[FilterToken::Text("bar abc".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo_bar_abc_baz", &compile(&[FilterToken::Text("bar abc".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo_bar_abc_baz", &compile(&[FilterToken::Text("bar-abc".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("bar_abc".to_string())]).unwrap()), true);
     }
 
     #[test]
     fn retry_on_failure_with_next() {
-        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::Text("b-a-r".to_string())])), true);
-        assert_eq!(apply("foo baz bar", &compile(&[FilterToken::Text("b-a-r".to_string())])), true);
-        assert_eq!(apply("foo baz bax", &compile(&[FilterToken::Text("b-a-r".to_string())])), false);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::Text("b-a-r".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo baz bar", &compile(&[FilterToken::Text("b-a-r".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo baz bax", &compile(&[FilterToken::Text("b-a-r".to_string())]).unwrap()), false);
     }
 
     #[test]
@@ -279,21 +303,21 @@ mod tests {
         // 0xCC, 0x88: Trema for previous letter (https://www.compart.com/de/unicode/U+0308)
         // 0xC3, 0xA4: ä
         // println!("{:02X?}", text.bytes());
-        assert_eq!(apply(text, &compile(&[FilterToken::Text("a-b".to_string())])), false);
+        assert_eq!(apply(text, &compile(&[FilterToken::Text("a-b".to_string())]).unwrap()), false);
     }
 
     #[test]
     fn position_calculation_same_order() {
         let text = "              a            bc";
-        for a in &[FilterToken::CaseInSensitive, FilterToken::CaseInSensitive] {
-            for b in &[FilterToken::WholePath, FilterToken::LastElement] {
+        for a in &[CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive] {
+            for b in &[CompiledFilterToken::WholePath, CompiledFilterToken::LastElement] {
                 assert_eq!(apply(text, &[
                     a.clone(),
                     b.clone(),
-                    FilterToken::SameOrder,
-                    FilterToken::Text("a".to_string()),
-                    FilterToken::Text("b".to_string()),
-                    FilterToken::Next("c".to_string())
+                    CompiledFilterToken::SameOrder,
+                    CompiledFilterToken::SmartText("a".to_string()),
+                    CompiledFilterToken::SmartText("b".to_string()),
+                    CompiledFilterToken::SmartNext("c".to_string())
                 ]), true);
             }
         }
@@ -302,15 +326,15 @@ mod tests {
     #[test]
     fn position_calculation_any_order() {
         let text = "              bc            a";
-        for a in &[FilterToken::CaseInSensitive, FilterToken::CaseInSensitive] {
-            for b in &[FilterToken::WholePath, FilterToken::LastElement] {
+        for a in &[CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive] {
+            for b in &[CompiledFilterToken::WholePath, CompiledFilterToken::LastElement] {
                 assert_eq!(apply(text, &[
                     a.clone(),
                     b.clone(),
-                    FilterToken::AnyOrder,
-                    FilterToken::Text("a".to_string()),
-                    FilterToken::Text("b".to_string()),
-                    FilterToken::Next("c".to_string())
+                    CompiledFilterToken::AnyOrder,
+                    CompiledFilterToken::SmartText("a".to_string()),
+                    CompiledFilterToken::SmartText("b".to_string()),
+                    CompiledFilterToken::SmartNext("c".to_string())
                 ]), true);
             }
         }
@@ -321,31 +345,62 @@ mod tests {
         let actual = compile( &[
             FilterToken::Text("a b c d".to_string()),
             FilterToken::Text("e".to_string()),
-        ] );
-        let expected: Vec<FilterToken> = vec![
-            FilterToken::Text("a".to_string()),
-            FilterToken::SameOrder,
-            FilterToken::Next("b".to_string()),
-            FilterToken::Next("c".to_string()),
-            FilterToken::Next("d".to_string()),
-            FilterToken::AnyOrder,
-            FilterToken::Text("e".to_string()),
+        ] ).unwrap();
+        let expected = vec![
+            CompiledFilterToken::SmartText("a".to_string()),
+            CompiledFilterToken::SameOrder,
+            CompiledFilterToken::SmartNext("b".to_string()),
+            CompiledFilterToken::SmartNext("c".to_string()),
+            CompiledFilterToken::SmartNext("d".to_string()),
+            CompiledFilterToken::AnyOrder,
+            CompiledFilterToken::SmartText("e".to_string()),
         ];
         assert_eq!(actual, expected);
     }
 
     #[test]
     fn remove_empty_strings_after_expanding_smart_spaces() {
-        let actual = compile(&[FilterToken::Text("- a-b c- -d -".to_string())]);
+        let actual = compile(&[FilterToken::Text("- a-b c- -d -".to_string())]).unwrap();
         let expected = vec![
-            FilterToken::Text("a".to_string()),
-            FilterToken::SameOrder,
-            FilterToken::Next("b".to_string()),
-            FilterToken::Next("c".to_string()),
-            FilterToken::Next("d".to_string()),
-            FilterToken::AnyOrder,
+            CompiledFilterToken::SmartText("a".to_string()),
+            CompiledFilterToken::SameOrder,
+            CompiledFilterToken::SmartNext("b".to_string()),
+            CompiledFilterToken::SmartNext("c".to_string()),
+            CompiledFilterToken::SmartNext("d".to_string()),
+            CompiledFilterToken::AnyOrder,
         ];
         assert_eq!(actual, expected);
     }
 
+    #[test]
+    fn glob_star() {
+        assert_eq!(process(&[FilterToken::Glob, t("*i")]), [S2, S3]);
+    }
+
+    #[test]
+    fn glob_recursive_wildcard() {
+        assert_eq!(process(&[FilterToken::Glob,  FilterToken::RequireLiteralSeparator(false), t("/**/*s")]), [S1]);
+    }
+
+    #[test]
+    fn glob_question_mark() {
+        assert_eq!(process(&[FilterToken::Glob, t("*/???i")]), [S2, S3]);
+    }
+
+    #[test]
+    fn glob_require_literal_separator() {
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(false), t("/*i")]), [S2, S3]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(true), t("/*i")]), EMPTY);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(true), t("/*/*/*/*i")]), [S2, S3]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(true), t("/**/*i")]), [S2, S3]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(true), t("/**/eins")]), [S1]);
+    }
+
+    #[test]
+    fn glob_require_literal_leading_dir() {
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(false), t("*.txt")]), [S7]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*.txt")]), EMPTY);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*/*.txt")]), EMPTY);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*/.*.txt")]), [S7]);
+    }
 }

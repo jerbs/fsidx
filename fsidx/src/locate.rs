@@ -44,7 +44,7 @@ pub fn locate<F: FnMut(LocateResult)->Result<()>>(volume_info: Vec<VolumeInfo>, 
 
 pub fn locate_volume<F: FnMut(LocateResult)->Result<()>>(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, interrupt: &Option<Arc<AtomicBool>>, f: &mut F) -> Result<()> {    
     let mut reader = FileIndexReader::new(&volume_info.database)?;
-    let filter = filter::compile(&filter);
+    let filter = filter::compile(&filter).map_err(|_| Error::new(ErrorKind::Other, "pattern error"))?;
     loop {
         if interrupt.as_ref().map(|v| v.load(Ordering::Relaxed)).unwrap_or(false) {
             return Err(Error::new(ErrorKind::Interrupted, "interrupted"));
