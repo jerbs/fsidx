@@ -268,32 +268,32 @@ mod tests {
 
     #[test]
     fn continue_after_last_match() {
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string()), FilterToken::Text("foo".to_string())]).unwrap()), false);
-        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::SameOrder, FilterToken::Text("foo".to_string()), FilterToken::Text("baz".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::Text("foo baz".to_string())]).unwrap()), false);
-        assert_eq!(apply("fOO bar baZ", &compile(&[FilterToken::Text("Foo Bar".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo foo", &compile(&[FilterToken::Text("foo foo".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::Text("foo foo".to_string())]).unwrap()), false);
-        assert_eq!(apply("foo-foo", &compile(&[FilterToken::Text("foo foo".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo_foo", &compile(&[FilterToken::Text("foo foo".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo")]).unwrap()), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo"), t("foo")]).unwrap()), false);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::SameOrder, t("foo"), t("baz")]).unwrap()), true);
+        assert_eq!(apply("foo bar baz", &compile(&[t("foo baz")]).unwrap()), false);
+        assert_eq!(apply("fOO bar baZ", &compile(&[t("Foo Bar")]).unwrap()), true);
+        assert_eq!(apply("foo foo", &compile(&[t("foo foo")]).unwrap()), true);
+        assert_eq!(apply("foo bar", &compile(&[t("foo foo")]).unwrap()), false);
+        assert_eq!(apply("foo-foo", &compile(&[t("foo foo")]).unwrap()), true);
+        assert_eq!(apply("foo_foo", &compile(&[t("foo foo")]).unwrap()), true);
     }
 
     #[test]
     fn smart_space() {
-        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("foo baz".to_string())]).unwrap()), false);
-        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("bar abc".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo-bar-abc-baz", &compile(&[FilterToken::Text("bar abc".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo_bar_abc_baz", &compile(&[FilterToken::Text("bar abc".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo_bar_abc_baz", &compile(&[FilterToken::Text("bar-abc".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo bar abc baz", &compile(&[FilterToken::Text("bar_abc".to_string())]).unwrap()), true);
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("foo baz")]).unwrap()), false);
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar abc")]).unwrap()), true);
+        assert_eq!(apply("foo-bar-abc-baz", &compile(&[t("bar abc")]).unwrap()), true);
+        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar abc")]).unwrap()), true);
+        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar-abc")]).unwrap()), true);
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar_abc")]).unwrap()), true);
     }
 
     #[test]
     fn retry_on_failure_with_next() {
-        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::Text("b-a-r".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo baz bar", &compile(&[FilterToken::Text("b-a-r".to_string())]).unwrap()), true);
-        assert_eq!(apply("foo baz bax", &compile(&[FilterToken::Text("b-a-r".to_string())]).unwrap()), false);
+        assert_eq!(apply("foo bar baz", &compile(&[t("b-a-r")]).unwrap()), true);
+        assert_eq!(apply("foo baz bar", &compile(&[t("b-a-r")]).unwrap()), true);
+        assert_eq!(apply("foo baz bax", &compile(&[t("b-a-r")]).unwrap()), false);
     }
 
     #[test]
@@ -303,7 +303,7 @@ mod tests {
         // 0xCC, 0x88: Trema for previous letter (https://www.compart.com/de/unicode/U+0308)
         // 0xC3, 0xA4: ä
         // println!("{:02X?}", text.bytes());
-        assert_eq!(apply(text, &compile(&[FilterToken::Text("a-b".to_string())]).unwrap()), false);
+        assert_eq!(apply(text, &compile(&[t("a-b")]).unwrap()), false);
     }
 
     #[test]
@@ -343,8 +343,8 @@ mod tests {
     #[test]
     fn compile_text_with_spaces() {
         let actual = compile( &[
-            FilterToken::Text("a b c d".to_string()),
-            FilterToken::Text("e".to_string()),
+            t("a b c d"),
+            t("e"),
         ] ).unwrap();
         let expected = vec![
             CompiledFilterToken::SmartText("a".to_string()),
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn remove_empty_strings_after_expanding_smart_spaces() {
-        let actual = compile(&[FilterToken::Text("- a-b c- -d -".to_string())]).unwrap();
+        let actual = compile(&[t("- a-b c- -d -")]).unwrap();
         let expected = vec![
             CompiledFilterToken::SmartText("a".to_string()),
             CompiledFilterToken::SameOrder,
