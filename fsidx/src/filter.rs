@@ -144,7 +144,9 @@ pub fn apply(text: &str, filter: &[CompiledFilterToken]) -> bool {
             CompiledFilterToken::LastElement if !b_last_element => {b_last_element = true; pos = if pos > offset { pos - offset } else { 0 }; true},
             CompiledFilterToken::WholePath => false,
             CompiledFilterToken::LastElement => false,
-            CompiledFilterToken::Glob(pattern, options) => pattern.matches_with(text, *options),
+            CompiledFilterToken::Glob(pattern, options) if  b_last_element => pattern.matches_with(last_text, *options),
+            CompiledFilterToken::Glob(pattern, options) if !b_last_element => pattern.matches_with(text, *options),
+            CompiledFilterToken::Glob(_, _) => false,
         } {
             return false
         }
@@ -415,5 +417,12 @@ mod tests {
         assert_eq!(process(&[FilterToken::SameOrder, FilterToken::WholePath, t("x"), FilterToken::LastElement, t("zwei")]), [S2]);
         assert_eq!(process(&[FilterToken::SameOrder, FilterToken::WholePath, t("zw"), FilterToken::LastElement, t("ei")]), [S2]);
         assert_eq!(process(&[FilterToken::SameOrder, FilterToken::WholePath, t("zwe"), FilterToken::LastElement, t("ei")]), EMPTY);
+    }
+
+    #[test]
+    fn glob_on_last_element_only() {
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::LastElement, t("*.txt")]), [S7]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::WholePath, t("*.txt")]), [S7]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::WholePath, FilterToken::RequireLiteralSeparator(true), t("*.txt")]), EMPTY);
     }
 }
