@@ -94,20 +94,20 @@ fn expand_smart_spaces(text: String, mut b_same_order: bool, filter: &mut Vec<Co
 
 struct State {
     index: usize,
-    pos: usize
+    pos: usize,
 }
 
 pub fn apply(text: &str, filter: &[CompiledFilterToken]) -> bool {
     let lower_text: String = text.to_lowercase();
-    let (last_text, lower_last_text) = if let Some(pos_last_slash) = text.rfind('/') {
+    let (last_text, lower_last_text, offset) = if let Some(pos_last_slash) = text.rfind('/') {
         let last_text = &text[pos_last_slash+1..];
         let lower_last_text = &lower_text[pos_last_slash+1..];
-        (last_text, lower_last_text)
+        (last_text, lower_last_text, pos_last_slash+1)
     } else {
-        (text, &lower_text[..])
+        (text, &lower_text[..], 0)
     };
     
-    let mut pos: usize = 0;     // FIXME: Do I need to split this into an whole path position and a last element position? Add a test that switches between the two modes.
+    let mut pos: usize = 0;   // Either whole path position or last element position depending on b_last_element.
     let mut index = 0;
     let mut b_case_sensitive = false;
     let mut b_same_order = false;
@@ -130,16 +130,20 @@ pub fn apply(text: &str, filter: &[CompiledFilterToken]) -> bool {
             CompiledFilterToken::SmartText(pattern) if !b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = lower_text[pos..].find(pattern)      {pos = pos + npos + pattern.len(); true} else {false},
             CompiledFilterToken::SmartText(pattern) if  b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = text.find(pattern)                   {pos =       npos + pattern.len(); true} else {false},
             CompiledFilterToken::SmartText(pattern) if !b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = lower_text.find(pattern)             {pos =       npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartNext(pattern) if  b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &text, &back_tracking); index = s.index; pos = s.pos; true},  // TODO: use destructuring_assignment
-            CompiledFilterToken::SmartNext(pattern) if !b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &lower_text, &back_tracking); index = s.index; pos = s.pos; true},
+            CompiledFilterToken::SmartNext(pattern) if  b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &text, &back_tracking); State { index, pos } = s; true},
+            CompiledFilterToken::SmartNext(pattern) if !b_case_sensitive => {let s = apply_next(State {index, pos}, pattern, &lower_text, &back_tracking); State { index, pos } = s; true},
             CompiledFilterToken::SmartText(_) => false,
             CompiledFilterToken::SmartNext(_) => false,
             CompiledFilterToken::CaseSensitive => {b_case_sensitive = true; true},
             CompiledFilterToken::CaseInSensitive => {b_case_sensitive = false; true},
             CompiledFilterToken::AnyOrder => {b_same_order = false; true},
             CompiledFilterToken::SameOrder => {b_same_order = true; true},
-            CompiledFilterToken::WholePath => {b_last_element = false; true},
-            CompiledFilterToken::LastElement => {b_last_element = true; true},
+            CompiledFilterToken::WholePath   if  b_last_element => {b_last_element = false; pos = pos + offset; true},
+            CompiledFilterToken::WholePath   if !b_last_element => {true},
+            CompiledFilterToken::LastElement if  b_last_element => {true},
+            CompiledFilterToken::LastElement if !b_last_element => {b_last_element = true; pos = if pos > offset { pos - offset } else { 0 }; true},
+            CompiledFilterToken::WholePath => false,
+            CompiledFilterToken::LastElement => false,
             CompiledFilterToken::Glob(pattern, options) => pattern.matches_with(text, *options),
         } {
             return false
@@ -402,5 +406,14 @@ mod tests {
         assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*.txt")]), EMPTY);
         assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*/*.txt")]), EMPTY);
         assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*/.*.txt")]), [S7]);
+    }
+
+    #[test]
+    fn switching_between_whole_path_and_last_element_position_modes() {
+        assert_eq!(process(&[FilterToken::SameOrder, FilterToken::LastElement, t("z"), FilterToken::WholePath, t("wei")]), [S2]);
+        assert_eq!(process(&[FilterToken::SameOrder, FilterToken::LastElement, t("z"), FilterToken::WholePath, t("x")]), EMPTY);
+        assert_eq!(process(&[FilterToken::SameOrder, FilterToken::WholePath, t("x"), FilterToken::LastElement, t("zwei")]), [S2]);
+        assert_eq!(process(&[FilterToken::SameOrder, FilterToken::WholePath, t("zw"), FilterToken::LastElement, t("ei")]), [S2]);
+        assert_eq!(process(&[FilterToken::SameOrder, FilterToken::WholePath, t("zwe"), FilterToken::LastElement, t("ei")]), EMPTY);
     }
 }
