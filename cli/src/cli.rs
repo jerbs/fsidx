@@ -146,6 +146,16 @@ fn locate_cli() -> clap::Command<'static> {
         .help("") )
 }
 
+// write_flags(&mut stdout, &["-m0", "-auto"], indent, "Auto detect mode (default)")?;
+// write_flags(&mut stdout, &["-m1", "-smart"], indent, "Enter smart searching mode")?;
+// write_flags(&mut stdout, &["-m2", "-glob"], indent, "Enter glob pattern mode")?;
+
+// write_flags(&mut stdout, &[r#"-ls, -ls1, -require_literal_separator"#], indent, "* does not match /")?;
+// write_flags(&mut stdout, &[r#"-ls0, -unrequire_literal_separator"#], indent, "* does match /")?;
+// write_flags(&mut stdout, &[r#"-ld, -ld1, -require_literal_leading_dot"#], indent, "* does not match a leading dot")?;
+// write_flags(&mut stdout, &[r#"-ld0, -unrequire_literal_leading_dot"#], indent, "* does match a leading dot")?;
+
+
 fn locate_filter(matches: &ArgMatches) -> Vec<FilterToken> {
     let mut filter: Vec<(FilterToken, usize)> = Vec::new();
     if let Some(indices) = matches.indices_of("case_sensitive") {for idx in indices {filter.push((FilterToken::CaseSensitive, idx)) } };
@@ -176,6 +186,13 @@ fn locate_filter_interactive(mut token_it: TokenIterator) -> Result<Vec<FilterTo
                 "same_order"       | "s" => FilterToken::SameOrder,
                 "whole_path"       | "w" => FilterToken::WholePath,
                 "last_element"     | "l" => FilterToken::LastElement,
+                "require_literal_separator"   | "ls" | "ls1" => FilterToken::RequireLiteralSeparator(true),
+                "unrequire_literal_separator"        | "ls0" => FilterToken::RequireLiteralSeparator(false),
+                "require_literal_leading_dot" | "ld" | "ld1" => FilterToken::RequireLiteralLeadingDot(true),
+                "unrequire_literal_leading_dot"      | "ld0" => FilterToken::RequireLiteralLeadingDot(false),
+                "auto"  | "m0" => FilterToken::Auto,
+                "smart" | "m1" => FilterToken::Smart,
+                "glob"  | "m2" => FilterToken::Glob,
                 _  => {
                     let msg = format!("Invalid option: -{}", text);
                     return Err(Error::new(ErrorKind::InvalidInput, msg));
@@ -500,7 +517,12 @@ fn help() -> Result<()>{
     write_flags(&mut stdout, &[r#"\o [id ...]"#], indent, "open files with id from last selection")?;
     write_flags(&mut stdout, &[r#"\u"#], indent, "update database")?;
 
-    write_section(&mut stdout, "Searching the file system index:")?;
+    write_section(&mut stdout, "Modes:")?;
+    write_flags(&mut stdout, &["-m0", "-auto"], indent, "Auto detect mode (default)")?;
+    write_flags(&mut stdout, &["-m1", "-smart"], indent, "Enter smart searching mode")?;
+    write_flags(&mut stdout, &["-m2", "-glob"], indent, "Enter glob pattern mode")?;
+
+    write_section(&mut stdout, "Smart searching (-m1):")?;
     write_flags(&mut stdout, &[r#"text"#], indent, "Search for any path containing 'text'")?;
     write_flags(&mut stdout, &[r#"foo bar"#], indent, "Path must contains all strings in any order")?;
     write_flags(&mut stdout, &[r#""foo bar""#], indent, "Match text with spaces")?;
@@ -511,7 +533,23 @@ fn help() -> Result<()>{
     write_flags(&mut stdout, &[r#""\"""#, r#"""\""#], indent, "Match double quote")?;
     write_flags(&mut stdout, &[r#""-""#, r#"""-"#], indent, "Match dash")?;
     write_flags(&mut stdout, &[r#""\\""#, r#"""\\"#], indent, "Match backslash")?;
-    
+
+    write_section(&mut stdout, "Glob pattern searching (-m2):")?;
+    write_flags(&mut stdout, &[r#"*.???"#], indent, "? matches any single character.")?;
+    write_flags(&mut stdout, &[r#"*.jpg"#], indent, "* matches any sequence of characters")?;
+    write_flags(&mut stdout, &[r#"/**/*.jpg"#], indent, "** matches any subdirectory")?;
+    write_flags(&mut stdout, &[r#"[abc]"#], indent, "[...] matches one of the characters inside the brackets")?;
+    write_flags(&mut stdout, &[r#"[a-zA-Z]"#], indent, "[.-.] matches one of the characters in the sequence")?;
+    write_flags(&mut stdout, &[r#"[!abc]"#], indent, "negation of [...]")?;
+    write_flags(&mut stdout, &[r#"[?]"#], indent, "matches a ?")?;
+    write_flags(&mut stdout, &[r#"[*]"#], indent, "matches a *")?;
+    write_flags(&mut stdout, &[r#"[[]]"#], indent, "matches a [")?;
+    write_flags(&mut stdout, &[r#"[]]"#], indent, "matches a ]")?;
+    write_flags(&mut stdout, &[r#"-ls, -ls1, -require_literal_separator"#], indent, "* does not match /")?;
+    write_flags(&mut stdout, &[r#"-ls0, -unrequire_literal_separator"#], indent, "* does match /")?;
+    write_flags(&mut stdout, &[r#"-ld, -ld1, -require_literal_leading_dot"#], indent, "* does not match a leading dot")?;
+    write_flags(&mut stdout, &[r#"-ld0, -unrequire_literal_leading_dot"#], indent, "* does match a leading dot")?;
+
     let indent = 30;
     write_section(&mut stdout, "Search options:")?;
     write_flags(&mut stdout, &["-c", "-case_sensitive"], indent, "Subsequent [text] arguments are matched case sensitive")?;

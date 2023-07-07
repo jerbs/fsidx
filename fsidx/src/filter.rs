@@ -12,6 +12,7 @@ pub enum FilterToken {
     SmartSpaces(bool),  // default: on
     RequireLiteralSeparator(bool),  // default: off
     RequireLiteralLeadingDot(bool), // default: off
+    Auto,
     Smart,
     Glob,
 }
@@ -29,15 +30,16 @@ pub enum CompiledFilterToken {
     LastElement,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Mode {
+    Auto,
     Smart,
     Glob,
 }
 
 pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, PatternError> {
     let mut result = Vec::new();
-    let mut mode: Mode = Mode::Smart;
+    let mut mode: Mode = Mode::Auto;
     let mut case_sensitive = false;
     let mut smart_spaces = true;
     let mut same_order = false;
@@ -50,12 +52,22 @@ pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, Patte
         match token {
             FilterToken::CaseSensitive   => { case_sensitive = true; match_options.case_sensitive = true; result.push(CompiledFilterToken::CaseSensitive); },
             FilterToken::CaseInSensitive => { case_sensitive = false; match_options.case_sensitive = false; result.push(CompiledFilterToken::CaseInSensitive); },
-            FilterToken::Text(text) if mode == Mode::Smart &&  case_sensitive &&  smart_spaces => { expand_smart_spaces(text.clone(), same_order, &mut result); },
-            FilterToken::Text(text) if mode == Mode::Smart &&  case_sensitive && !smart_spaces => { result.push(CompiledFilterToken::SmartText(text.clone())); },
-            FilterToken::Text(text) if mode == Mode::Smart && !case_sensitive &&  smart_spaces => { expand_smart_spaces(text.to_lowercase(), same_order, &mut result); },
-            FilterToken::Text(text) if mode == Mode::Smart && !case_sensitive && !smart_spaces => { result.push(CompiledFilterToken::SmartText(text.to_lowercase())); },
-            FilterToken::Text(text) if mode == Mode::Glob => { result.push(CompiledFilterToken::Glob(Pattern::new(text.as_str())?, match_options.clone())) },
-            FilterToken::Text(_) => { todo!(); },   // Getting a warning without this line.
+            FilterToken::Text(text) => {
+                let mode = if mode == Mode::Auto {
+                    if text.contains("*") { Mode::Glob }
+                    else if text.contains("?") { Mode::Glob }
+                    else if text.contains("[") { Mode::Glob }
+                    else if text.contains("]") { Mode::Glob }
+                    else { Mode::Smart }
+                } else {
+                    mode
+                };
+                if mode == Mode::Smart &&  case_sensitive &&  smart_spaces { expand_smart_spaces(text.clone(), same_order, &mut result); };
+                if mode == Mode::Smart &&  case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.clone())); };
+                if mode == Mode::Smart && !case_sensitive &&  smart_spaces { expand_smart_spaces(text.to_lowercase(), same_order, &mut result); };
+                if mode == Mode::Smart && !case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.to_lowercase())); };
+                if mode == Mode::Glob { result.push(CompiledFilterToken::Glob(Pattern::new(text.as_str())?, match_options.clone())) };
+            },
             FilterToken::AnyOrder => { same_order = false; result.push(CompiledFilterToken::AnyOrder); }
             FilterToken::SameOrder => { same_order = true; result.push(CompiledFilterToken::SameOrder); }
             FilterToken::WholePath => { result.push(CompiledFilterToken::WholePath); },
@@ -63,6 +75,7 @@ pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, Patte
             FilterToken::SmartSpaces(on) => { smart_spaces = *on; },
             FilterToken::RequireLiteralSeparator(on) => { match_options.require_literal_separator = *on; },
             FilterToken::RequireLiteralLeadingDot(on) => {match_options.require_literal_leading_dot = *on; },
+            FilterToken::Auto => { mode = Mode::Auto; },
             FilterToken::Smart => { mode = Mode::Smart; },
             FilterToken::Glob => { mode = Mode::Glob; },
         }
