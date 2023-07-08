@@ -21,7 +21,7 @@ rustyline = "9.1.2"
 serde = { version = "1.0.133", features = ["derive"] }
 signal-hook = "0.3.13"
 termcolor = "1.1.2"
-toml = "0.5.8"
+toml = "0.7.6"
 
 [dev-dependencies]
-indoc = "1.0.3"
+indoc = "2.0.2"
