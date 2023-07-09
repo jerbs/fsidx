@@ -1,9 +1,11 @@
 use clap::{self, Arg, ArgMatches};
 use fsidx::{FilterToken, Settings, UpdateSink, LocateResult, Metadata};
+use indoc::indoc;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use signal_hook::iterator::Signals;
 use signal_hook::consts::signal::SIGINT;
+use std::collections::VecDeque;
 use std::os::unix::prelude::OsStrExt;
 use std::process::Command;
 use std::{env, process};
@@ -18,7 +20,7 @@ use crate::tokenizer::{tokenize, TokenIterator, Token};
 use crate::tty::set_tty;
 use crate::verbosity::{verbosity, set_verbosity};
 
-fn app_cli() -> clap::Command<'static> {
+fn app_cli() -> clap::Command {
     clap::Command::new("fsidx")
     .author("Joachim Erbs, joachim.erbs@gmx.de")
     .version(env!("CARGO_PKG_VERSION"))
@@ -28,15 +30,12 @@ fn app_cli() -> clap::Command<'static> {
         .long("config")
         .value_name("FILE")
         .help("Set a configuration file")
-        .takes_value(true)  )
+        .num_args(1)  )
     .arg(Arg::new("verbosity")
         .short('v')
         .long("verbose")
-        .multiple_occurrences(true)
+        .action(clap::ArgAction::Count)
         .help("Set verbosity level") )
-    .arg(Arg::new("version_info")
-        .long("version")
-        .help("Print version info and exit"))
     .subcommand(locate_cli())
     .subcommand(update_cli())
     .subcommand(shell_cli())
@@ -45,15 +44,9 @@ fn app_cli() -> clap::Command<'static> {
 pub fn main() -> i32 {
     let matches = app_cli().get_matches();
 
-    set_verbosity(matches.occurrences_of("verbosity"));
+    set_verbosity(matches.get_count("verbosity"));
 
-    if matches.is_present("version_info") {
-        const VERSION: &str = env!("CARGO_PKG_VERSION");
-        const NAME: &str = env!("CARGO_PKG_NAME");
-        let _ = writeln!(stdout().lock(), "{}: Version {}", NAME, VERSION);
-    }
-
-    let config: Config = if let Some(config_file) = matches.value_of("config_file") {
+    let config: Config = if let Some(config_file) = matches.get_one::<String>("config_file") {
         if verbosity() {
             let _ = writeln!(stdout().lock(), "Config File: {}", config_file);
         }
@@ -91,89 +84,69 @@ pub fn main() -> i32 {
     exit_code
 }
 
-fn locate_cli() -> clap::Command<'static> {
+fn locate_cli() -> clap::Command {
     clap::Command::new("locate")
     .about("Find matching files in the database")
-    // .arg(Arg::new("mt")
-    //     .long("mt")
-    //     .takes_value(false)
-    //     .help("Use multithreaded implementation") )
-    .arg(Arg::new("case_sensitive")
-        .short('c')
-        .multiple_occurrences(true)
-        .takes_value(false)
+    .arg(Arg::new("filter")
+        .trailing_var_arg(true)
+        .allow_hyphen_values(true)
+        .num_args(0..)
         .display_order(100)
-        .help_heading("MATCHING OPTIONS")
-        .help("Subsequent [text] arguments are matched case sensitive") )
-    .arg(Arg::new("case_insensitive")
-        .short('i')
-        .multiple_occurrences(true)
-        .takes_value(false)
-        .display_order(101)
-        .help_heading("MATCHING OPTIONS")
-        .help("Subsequent [text] arguments are matched case insensitive") )
-    .arg(Arg::new("any_order")
-        .short('a')
-        .multiple_occurrences(true)
-        .takes_value(false)
-        .display_order(102)
-        .help_heading("MATCHING OPTIONS")
-        .help("Subsequent [text] arguments may  match in any order") )
-    .arg(Arg::new("same_order")
-        .short('s')
-        .multiple_occurrences(true)
-        .takes_value(false)
-        .display_order(103)
-        .help_heading("MATCHING OPTIONS")
-        .help("Subsequent [text] arguments must match in the same order") )
-    .arg(Arg::new("whole_path")
-        .short('w')
-        .multiple_occurrences(true)
-        .takes_value(false)
-        .display_order(104)
-        .help_heading("MATCHING OPTIONS")
-        .help("Subsequent [text] arguments may  appear in the whole path") )
-    .arg(Arg::new("last_element")
-        .short('l')
-        .multiple_occurrences(true)
-        .takes_value(false)
-        .display_order(105)
-        .help_heading("MATCHING OPTIONS")
-        .help("Subsequent [text] arguments must appear in the last element only") )
-    .arg(Arg::new("text")
-        // .allow_invalid_utf8(true)
-        .multiple_occurrences(true)
-        .help("") )
+        .help_heading("Filter")
+        .help(indoc! {"
+            Any filter flag, text or glob in any order.
+            Use the \\h command available in the fsidx shell
+            for more details.
+            "})
+    )
 }
 
-// write_flags(&mut stdout, &["-m0", "-auto"], indent, "Auto detect mode (default)")?;
-// write_flags(&mut stdout, &["-m1", "-smart"], indent, "Enter smart searching mode")?;
-// write_flags(&mut stdout, &["-m2", "-glob"], indent, "Enter glob pattern mode")?;
+struct TokenVec {
+    token: VecDeque<Token>,
+}
 
-// write_flags(&mut stdout, &[r#"-ls, -ls1, -require_literal_separator"#], indent, "* does not match /")?;
-// write_flags(&mut stdout, &[r#"-ls0, -unrequire_literal_separator"#], indent, "* does match /")?;
-// write_flags(&mut stdout, &[r#"-ld, -ld1, -require_literal_leading_dot"#], indent, "* does not match a leading dot")?;
-// write_flags(&mut stdout, &[r#"-ld0, -unrequire_literal_leading_dot"#], indent, "* does match a leading dot")?;
+struct TokenIter {
+    remainder: VecDeque<Token>,
+}
 
+impl IntoIterator for TokenVec {
+    type Item = Token;
+    type IntoIter = TokenIter;
 
-fn locate_filter(matches: &ArgMatches) -> Vec<FilterToken> {
-    let mut filter: Vec<(FilterToken, usize)> = Vec::new();
-    if let Some(indices) = matches.indices_of("case_sensitive") {for idx in indices {filter.push((FilterToken::CaseSensitive, idx)) } };
-    if let Some(indices) = matches.indices_of("case_insensitive") {for idx in indices {filter.push((FilterToken::CaseInSensitive, idx)) } };
-    if let Some(indices) = matches.indices_of("any_order") {for idx in indices {filter.push((FilterToken::AnyOrder, idx)) } };
-    if let Some(indices) = matches.indices_of("same_order") {for idx in indices {filter.push((FilterToken::SameOrder, idx)) } };
-    if let Some(indices) = matches.indices_of("whole_path") {for idx in indices {filter.push((FilterToken::WholePath, idx)) } };
-    if let Some(indices) = matches.indices_of("last_element") {for idx in indices {filter.push((FilterToken::LastElement, idx)) } };
-    if let (Some(indices), Some(texts)) = (matches.indices_of("text"), matches.values_of("text")) {
-        for (idx, text) in indices.zip(texts) {
-            filter.push((FilterToken::Text(text.to_string()), idx));
+    fn into_iter(self) -> Self::IntoIter {
+        TokenIter {
+            remainder: self.token,
         }
     }
-    filter.sort_by(|(_,a), (_,b)| a.cmp(b));
-    filter.into_iter().map(|(token,_)| token).collect()
 }
 
-fn locate_filter_interactive(mut token_it: TokenIterator) -> Result<Vec<FilterToken>> {
+impl Iterator for TokenIter {
+    type Item = Token;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.remainder.pop_front()
+    }
+}
+
+fn locate_filter(matches: &ArgMatches) -> Result<Vec<FilterToken>> {
+    let mut token = VecDeque::new();
+    if let Some(values) = matches.get_raw("filter") {
+        for value in values {
+            let text = value.to_string_lossy();
+            if text.starts_with("-") {
+                token.push_back(Token::Option(String::from(&text[1..])));
+            } else {
+                token.push_back(Token::Text(String::from(text)));
+            }
+        }
+    }
+    let token_vec = TokenVec {
+        token
+    };
+    locate_filter_interactive(&mut token_vec.into_iter())
+}
+
+fn locate_filter_interactive(token_it: &mut dyn Iterator<Item = Token>) -> Result<Vec<FilterToken>> {
     let mut filter: Vec<FilterToken> = Vec::new();
     while let Some(token) = token_it.next() {
         let filter_token= match token {
@@ -264,17 +237,17 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateResult) -> Resul
 
 fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<i32> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
-    let filter_token = locate_filter(matches);
+    let filter_token = locate_filter(matches)?;
     locate_impl(config, filter_token, interrupt, |res| {
         print_locate_result(&mut stdout, &res)
     })?;
     Ok(0)
 }
 
-fn locate_interactive(config: &Config, token_it: TokenIterator, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>> {
+fn locate_interactive(config: &Config, mut token_it: TokenIterator, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     let mut selection = Vec::new();
-    let filter_token = locate_filter_interactive(token_it)?;
+    let filter_token = locate_filter_interactive(&mut token_it)?;
     locate_impl(config, filter_token, interrupt, |res| {
         if let LocateResult::Entry(path, _) = res {
             let pb = path.to_path_buf();
@@ -295,7 +268,7 @@ fn locate_impl<F: FnMut(LocateResult)->Result<()>>(config: &Config, filter_token
     fsidx::locate(volume_info, filter_token, interrupt, f)
 }
 
-fn shell_cli() -> clap::Command<'static> {
+fn shell_cli() -> clap::Command {
     clap::Command::new("shell")
     .about("Open the fsidx shell to enter locate queries")
 }
@@ -545,10 +518,10 @@ fn help() -> Result<()>{
     write_flags(&mut stdout, &[r#"[*]"#], indent, "matches a *")?;
     write_flags(&mut stdout, &[r#"[[]]"#], indent, "matches a [")?;
     write_flags(&mut stdout, &[r#"[]]"#], indent, "matches a ]")?;
-    write_flags(&mut stdout, &[r#"-ls, -ls1, -require_literal_separator"#], indent, "* does not match /")?;
-    write_flags(&mut stdout, &[r#"-ls0, -unrequire_literal_separator"#], indent, "* does match /")?;
-    write_flags(&mut stdout, &[r#"-ld, -ld1, -require_literal_leading_dot"#], indent, "* does not match a leading dot")?;
-    write_flags(&mut stdout, &[r#"-ld0, -unrequire_literal_leading_dot"#], indent, "* does match a leading dot")?;
+    write_flags(&mut stdout, &[r#"-ls, -ls1, -require_literal_separator"#], indent + 25, "* does not match /")?;
+    write_flags(&mut stdout, &[r#"-ls0, -unrequire_literal_separator"#], indent + 25, "* does match /")?;
+    write_flags(&mut stdout, &[r#"-ld, -ld1, -require_literal_leading_dot"#], indent + 25, "* does not match a leading dot")?;
+    write_flags(&mut stdout, &[r#"-ld0, -unrequire_literal_leading_dot"#], indent + 25, "* does match a leading dot")?;
 
     let indent = 30;
     write_section(&mut stdout, "Search options:")?;
@@ -603,7 +576,7 @@ fn print_error() {
     let _ = stderr.write_all(b": ");
 }
 
-fn update_cli() -> clap::Command<'static> {
+fn update_cli() -> clap::Command {
     clap::Command::new("update")
     .about("Rescan folders and update the database")
 }
