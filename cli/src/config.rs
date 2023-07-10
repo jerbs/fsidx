@@ -1,5 +1,4 @@
 use std::env;
-use std::fmt::Display;
 use std::fs;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
@@ -12,6 +11,14 @@ pub struct Config {
     #[serde(default)]
     pub locate: ConfigLocate,
     pub db_path: Option<PathBuf>,
+}
+
+#[derive(Debug)]
+pub enum ConfigError {
+    FileReadError(PathBuf, std::io::Error),
+    ParseError(toml::de::Error),
+    TomlFileExpected,
+    ConfigFileNotFound,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -73,7 +80,7 @@ impl Default for What {
     }
 }
 
-pub fn find_and_load() -> Result<Config, String> {
+pub fn find_and_load() -> Result<Config, ConfigError> {
     if let Ok(home) = env::var("HOME") {
         let path = Path::new(&home);
         let config_file_path = path.join(Path::new(".fsidx")).join(Path::new("fsidx.toml"));
@@ -85,32 +92,30 @@ pub fn find_and_load() -> Result<Config, String> {
     if config_file_path.exists() {
         return load_from_path(&config_file_path);
     }
-    Err("No fsidx.toml file found.".to_string())
+    Err(ConfigError::ConfigFileNotFound)
 }
     
-pub fn load_from_path(file_name: &Path) -> Result<Config, String> {
+pub fn load_from_path(file_name: &Path) -> Result<Config, ConfigError> {
     if file_name
         .extension()
-        .ok_or("toml extension expected")?
+        .ok_or(ConfigError::TomlFileExpected)?
         .to_str()
-        .ok_or("invalid config file extension")? != "toml"
+        .ok_or(ConfigError::TomlFileExpected)? != "toml"
     {
-        return Err("toml file expected".into());
+        return Err(ConfigError::TomlFileExpected);
     };
-    let contents = fs::read_to_string(file_name).map_err(stringify)?;
+    let contents = fs::read_to_string(file_name)
+        .map_err(|err: std::io::Error| ConfigError::FileReadError(file_name.to_owned(), err))?;
     let mut config = parse_content(&contents)?;
     set_db_path(&mut config, file_name);
     Ok( config )
 }
 
-fn parse_content(contents: &str) -> Result<Config, String> {
-    let mut config: Config = toml::from_str(&contents).map_err(stringify)?;
+fn parse_content(contents: &str) -> Result<Config, ConfigError> {
+    let mut config: Config = toml::from_str(&contents)
+        .map_err(|err: toml::de::Error| ConfigError::ParseError(err))?;
     resolve_leading_tilde(&mut config);
     Ok( config )
-}
-
-fn stringify<T: Display>(error: T) -> String {
-    format!("{}", error)
 }
 
 fn resolve_leading_tilde(config: &mut Config) {

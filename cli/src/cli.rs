@@ -1,6 +1,5 @@
-use clap::{self, Arg, ArgMatches};
+use env::Args;
 use fsidx::{FilterToken, Settings, UpdateSink, LocateResult, Metadata};
-use indoc::indoc;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use signal_hook::iterator::Signals;
@@ -9,97 +8,158 @@ use std::collections::VecDeque;
 use std::os::unix::prelude::OsStrExt;
 use std::process::Command;
 use std::{env, process};
-use std::io::{Error, ErrorKind, Result, stdout, stderr, Write};
+use std::io::{Error, ErrorKind, Result as IOResult, stdout, stderr, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
-use crate::config::{Config, find_and_load, get_volume_info, load_from_path};
+use crate::config::{Config, ConfigError, find_and_load, get_volume_info, load_from_path};
 use crate::expand::{Expand, MatchRule};
 use crate::tokenizer::{tokenize, TokenIterator, Token};
 use crate::tty::set_tty;
 use crate::verbosity::{verbosity, set_verbosity};
 
-fn app_cli() -> clap::Command {
-    clap::Command::new("fsidx")
-    .author("Joachim Erbs, joachim.erbs@gmx.de")
-    .version(env!("CARGO_PKG_VERSION"))
-    .about("Finding file names quickly with a database.")
-    .arg(Arg::new("config_file")
-        .short('c')
-        .long("config")
-        .value_name("FILE")
-        .help("Set a configuration file")
-        .num_args(1)  )
-    .arg(Arg::new("verbosity")
-        .short('v')
-        .long("verbose")
-        .action(clap::ArgAction::Count)
-        .help("Set verbosity level") )
-    .subcommand(locate_cli())
-    .subcommand(update_cli())
-    .subcommand(shell_cli())
+struct MainOptions {
+    config_file: Option<PathBuf>,
+    help: bool,
+    verbose: u8,
+    version: bool,
+}
+
+#[derive(Debug)]
+enum CliError {
+    MissingValue(String),
+    InvalidOption(String),
+    InvalidSubCommand(String),
+    ConfigError(ConfigError),
+    LocateError(std::io::Error),
+    NoDatabaseFound,
+    TtyConfigurationFailed(std::io::Error),
+    CreatingSignalHandlerFailed(std::io::Error),
+    StdoutWriteFailed(std::io::Error),
+    InvalidLocateFilterOption(String),
+    InvalidShellArgument(String),
+    InvalidUpdateArgument(String),
+}
+
+impl From<Error> for CliError {
+    fn from(value: Error) -> Self {
+        CliError::StdoutWriteFailed(value)
+    }
+}
+
+// FIXME: Implement more From traits to avoid map_err.
+
+impl Default for MainOptions {
+    fn default() -> Self {
+        Self {
+            config_file: None,
+            help: false,
+            verbose: 0,
+            version: false,
+        }
+    }
 }
 
 pub fn main() -> i32 {
-    let matches = app_cli().get_matches();
+    if let Err(err) = process_main_command() {
+        eprintln!("{:?}", err);
+        process::exit(1);
+    }
+    0
+}
 
-    set_verbosity(matches.get_count("verbosity"));
-
-    let config: Config = if let Some(config_file) = matches.get_one::<String>("config_file") {
+fn process_main_command() -> Result<(), CliError> {
+    let mut args = env::args();
+    let _ = args.next();
+    let (main_options, sub_command) = parse_main_command(&mut args)?;
+    set_verbosity(main_options.verbose);
+    if main_options.help {
+        let _ = help_cli();
+        process::exit(0);
+    }
+    if main_options.version {
+        print_version();
+        process::exit(0);
+    }
+    let config: Config = if let Some(config_file) = main_options.config_file {
         if verbosity() {
-            let _ = writeln!(stdout().lock(), "Config File: {}", config_file);
+            let _ = writeln!(stdout().lock(), "Config File: {}", config_file.to_string_lossy());
         }
-        match load_from_path(Path::new(config_file)) {
+        match load_from_path(&config_file) {
             Ok(config) => config,
-            Err(msg) => {let _ = writeln!(stderr().lock(), "{}", msg); return 1},
+            Err(err) => {return Err(CliError::ConfigError(err))},
         }
     } else {
         match find_and_load() {
             Ok(config) => config,
-            Err(msg) => {let _ = writeln!(stderr().lock(), "{}", msg); return 1},
+            Err(err) => {return Err(CliError::ConfigError(err))},
         }
     };
 
-    let result = match matches.subcommand() {
-        Some(("shell", sub_matches)) => shell(config, &matches, sub_matches),
-        Some(("locate", sub_matches)) => locate(&config, sub_matches, None),
-        Some(("update", _sub_matches)) => update(&config),
-        _ => {
-            app_cli().print_help().ok();
-            let _ = writeln!(stdout().lock(), "\n");
-            Err(Error::new(ErrorKind::Other, "Invalid command"))
-        },
-    };
-
-    let exit_code = match result {
-        Ok(exit_code) => exit_code,
-        Err(err) => {
-            print_error();
-            eprintln!("{}", err);
-            1
-        },
-    };
-
-    exit_code
+    if let Some(sub_command) = sub_command {
+        match sub_command.as_str() {
+            "shell"  => { shell(config, &mut args) },
+            "locate" => { locate(&config, &mut args, None) },
+            "update" => { update(&config, &mut args) },
+            "help"   => { help_cli() },
+            _        => { Err(CliError::InvalidSubCommand(sub_command)) }
+        }
+    } else {
+        usage_cli()
+    }
 }
 
-fn locate_cli() -> clap::Command {
-    clap::Command::new("locate")
-    .about("Find matching files in the database")
-    .arg(Arg::new("filter")
-        .trailing_var_arg(true)
-        .allow_hyphen_values(true)
-        .num_args(0..)
-        .display_order(100)
-        .help_heading("Filter")
-        .help(indoc! {"
-            Any filter flag, text or glob in any order.
-            Use the \\h command available in the fsidx shell
-            for more details.
-            "})
-    )
+fn parse_main_command(args: &mut Args) -> Result<(MainOptions, Option<String>), CliError>  {
+    let mut main_options = MainOptions::default();
+    let sub_command = loop {
+        if let Some(item) = args.next() {
+            if item.starts_with("--") {
+                let long_option = &item[2..];
+                main_options.parse(long_option, args)?;
+            } else if item.starts_with("-") {
+                let mut remainder = &item[1..];
+                while !remainder.is_empty() {
+                    let short_option = &remainder[0..1];
+                    remainder = &remainder[1..];
+                    main_options.parse(short_option, args)?;
+                }
+            } else {
+                break Some(item);
+            };
+        } else {
+            break None;
+        }
+    };
+    Ok((main_options, sub_command))
 }
+
+fn get_path_buf(args: &mut Args) -> Option<PathBuf>  {
+    if let Some(text) = args.next() {
+        Some(PathBuf::from(text))
+    } else {
+        None
+    }
+}
+
+impl MainOptions {
+    fn parse(&mut self, option: &str, args: &mut Args) -> Result<(), CliError> {
+        match option {
+            "c" | "config"  => { self.config_file = Some(get_path_buf(args)
+                                        .ok_or_else(|| CliError::MissingValue(option.to_string()))?); },
+            "h" | "help"    => { self.help = true; },
+            "v" | "verbose" => { self.verbose += 1; },
+            "V" | "version" => { self.version = true; },
+            val => { return Err(CliError::InvalidOption(val.to_string())); },
+        }
+        Ok(())
+    }
+}
+
+fn print_version() {
+
+}
+
 
 struct TokenVec {
     token: VecDeque<Token>,
@@ -128,16 +188,21 @@ impl Iterator for TokenIter {
     }
 }
 
-fn locate_filter(matches: &ArgMatches) -> Result<Vec<FilterToken>> {
+fn locate_filter(args: &mut Args) -> Result<Vec<FilterToken>, CliError> {
     let mut token = VecDeque::new();
-    if let Some(values) = matches.get_raw("filter") {
-        for value in values {
-            let text = value.to_string_lossy();
-            if text.starts_with("-") {
-                token.push_back(Token::Option(String::from(&text[1..])));
-            } else {
-                token.push_back(Token::Text(String::from(text)));
+    for text in args {
+        if text.starts_with("--") {
+            let long_option = &text[1..];
+            token.push_back(Token::Option(long_option.to_string()));
+        } else if text.starts_with("-") {
+            let mut remainder = &text[1..];
+            while !remainder.is_empty() {
+                let long_option = &remainder[1..2];
+                remainder = &remainder[2..];
+                token.push_back(Token::Option(long_option.to_string()));
             }
+        } else {
+            token.push_back(Token::Text(String::from(text)));
         }
     }
     let token_vec = TokenVec {
@@ -146,7 +211,7 @@ fn locate_filter(matches: &ArgMatches) -> Result<Vec<FilterToken>> {
     locate_filter_interactive(&mut token_vec.into_iter())
 }
 
-fn locate_filter_interactive(token_it: &mut dyn Iterator<Item = Token>) -> Result<Vec<FilterToken>> {
+fn locate_filter_interactive(token_it: &mut dyn Iterator<Item = Token>) -> Result<Vec<FilterToken>, CliError> {
     let mut filter: Vec<FilterToken> = Vec::new();
     while let Some(token) = token_it.next() {
         let filter_token= match token {
@@ -167,8 +232,7 @@ fn locate_filter_interactive(token_it: &mut dyn Iterator<Item = Token>) -> Resul
                 "smart" | "m1" => FilterToken::Smart,
                 "glob"  | "m2" => FilterToken::Glob,
                 _  => {
-                    let msg = format!("Invalid option: -{}", text);
-                    return Err(Error::new(ErrorKind::InvalidInput, msg));
+                    return Err(CliError::InvalidLocateFilterOption(text));
                 },
             },
         };
@@ -177,7 +241,7 @@ fn locate_filter_interactive(token_it: &mut dyn Iterator<Item = Token>) -> Resul
     Ok(filter)
 }
 
-fn print_size(stdout: &mut StandardStream, size: u64) -> Result<()> {
+fn print_size(stdout: &mut StandardStream, size: u64) -> IOResult<()> {
     let text = size.to_string();
     let bytes = text.bytes();
     let len = bytes.len();
@@ -193,7 +257,7 @@ fn print_size(stdout: &mut StandardStream, size: u64) -> Result<()> {
     Ok(())
 }
 
-fn print_locate_result(stdout: &mut StandardStream, res: &LocateResult) -> Result<()> {
+fn print_locate_result(stdout: &mut StandardStream, res: &LocateResult) -> IOResult<()> {
     match *res {
         LocateResult::Entry(path, Metadata { size: Some(size) } ) => {
             stdout.write_all(path.as_os_str().as_bytes())?;
@@ -235,16 +299,16 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateResult) -> Resul
     Ok(())
 }
 
-fn locate(config: &Config, matches: &ArgMatches, interrupt: Option<Arc<AtomicBool>>) -> Result<i32> {
+fn locate(config: &Config, args: &mut Args, interrupt: Option<Arc<AtomicBool>>) -> Result<(), CliError> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
-    let filter_token = locate_filter(matches)?;
+    let filter_token = locate_filter(args)?;
     locate_impl(config, filter_token, interrupt, |res| {
         print_locate_result(&mut stdout, &res)
     })?;
-    Ok(0)
+    Ok(())
 }
 
-fn locate_interactive(config: &Config, mut token_it: TokenIterator, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>> {
+fn locate_interactive(config: &Config, mut token_it: TokenIterator, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>, CliError> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     let mut selection = Vec::new();
     let filter_token = locate_filter_interactive(&mut token_it)?;
@@ -262,21 +326,22 @@ fn locate_interactive(config: &Config, mut token_it: TokenIterator, interrupt: O
     Ok(selection)
 }
 
-fn locate_impl<F: FnMut(LocateResult)->Result<()>>(config: &Config, filter_token: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<()> {
+fn locate_impl<F: FnMut(LocateResult)->IOResult<()>>(config: &Config, filter_token: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<(), CliError> {
     let volume_info = get_volume_info(&config)
-    .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
+    .ok_or(CliError::NoDatabaseFound)?;
     fsidx::locate(volume_info, filter_token, interrupt, f)
+    .map_err(|err| CliError::LocateError(err))
 }
 
-fn shell_cli() -> clap::Command {
-    clap::Command::new("shell")
-    .about("Open the fsidx shell to enter locate queries")
-}
-
-fn shell(config: Config, _matches: &ArgMatches, _sub_matches: &ArgMatches) -> Result<i32> {
-    crate::cli::set_tty()?;
+fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
+    if let Some(arg) = args.next() {
+        return Err(CliError::InvalidShellArgument(arg));
+    } 
+    crate::cli::set_tty()
+        .map_err(|err: Error| CliError::TtyConfigurationFailed(err))?;
     let interrupt = Arc::new(AtomicBool::new(false));
-    let mut signals = Signals::new(&[SIGINT])?;   // Ctrl-C
+    let mut signals = Signals::new(&[SIGINT])   // Ctrl-C
+        .map_err(|err| CliError::CreatingSignalHandlerFailed(err))?;
     let interrupt_for_signal_handler = interrupt.clone();
     std::thread::spawn(move || {
         let interrupt = interrupt_for_signal_handler;
@@ -302,7 +367,7 @@ fn shell(config: Config, _matches: &ArgMatches, _sub_matches: &ArgMatches) -> Re
     } else {
         None
     };
-    let _ = short_help();
+    let _ = help_shell_short();
     let mut selection: Option<Vec<PathBuf>> = None;
     loop {
         let readline = rl.readline("> ");
@@ -313,13 +378,9 @@ fn shell(config: Config, _matches: &ArgMatches, _sub_matches: &ArgMatches) -> Re
                 match process_shell_line(&config, &line, interrupt.clone(), &selection) {
                     Ok(Some(s)) => {selection = Some(s);},
                     Ok(None) => {},
-                    Err(err) => {
-                        match err.kind() {
-                            ErrorKind::Interrupted => {println!("CTRL-C");},
-                            ErrorKind::BrokenPipe => {println!("EOF");},
-                            _ => {print_error(); eprintln!("{}", err);},
-                        }
-                    },
+                    Err(CliError::LocateError(err)) if err.kind() == ErrorKind::Interrupted => {println!("CTRL-C");},
+                    Err(CliError::LocateError(err)) if err.kind() == ErrorKind::BrokenPipe => {println!("EOF");},
+                    Err(err) => { print_error(); eprintln!("{:?}", err);},    // FIXME: Replace debug print
                 };
             },
             Err(ReadlineError::Interrupted) => {
@@ -339,18 +400,18 @@ fn shell(config: Config, _matches: &ArgMatches, _sub_matches: &ArgMatches) -> Re
     if let Some(history) = history {
         rl.save_history(&history).unwrap();
     }
-    Ok(0)
+    Ok(())
 }
 
-fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<Option<Vec<PathBuf>>>{
+fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<Option<Vec<PathBuf>>, CliError>{
     let mut token_it = tokenize(line).into_iter();
     if let Some(Token::Backslash(command)) = token_it.next() {
         match command.as_str() {
             "q" if token_it.next().is_none() => {process::exit(0);},
             "o" => {open_backslash_command(token_it, selection)?;},
-            "u" if token_it.next().is_none() => {update(config)?;},
-            "h" => {let _ = help();},
-            _ => {let _ = short_help();},
+            "u" if token_it.next().is_none() => {update_impl(config)?;},
+            "h" => {let _ = help_shell();},
+            _ => {let _ = help_shell_short();},
         };
         return Ok(None);
     }
@@ -372,7 +433,7 @@ fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, s
     }
 }
 
-fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<()> {
+fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> IOResult<()> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found = false;
@@ -418,7 +479,7 @@ fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBu
     Ok(())
 }
 
-fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<()> {
+fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found = false;
@@ -444,7 +505,7 @@ fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Opti
     Ok(())
 }
 
-fn open_append(command: &mut Command, path: &Path, found: &mut bool) -> Result<()> {
+fn open_append(command: &mut Command, path: &Path, found: &mut bool) -> IOResult<()> {
     if path.exists() {
         command.arg(path);
         *found = true;
@@ -456,12 +517,12 @@ fn open_append(command: &mut Command, path: &Path, found: &mut bool) -> Result<(
         print_error();
         stderr().write_all(b"'")?;
         stderr().write_all(path.as_os_str().as_bytes())?;
-        stderr().write_all(b"' not exists. Device not mounted.\n")?;
+        stderr().write_all(b"' not exists. Device not mounted.\n")?;   // FIXME: Improve error.
     }
     Ok(())
 }
 
-fn open_spawn(command: &mut Command) -> Result<()> {
+fn open_spawn(command: &mut Command) -> IOResult<()> {
 
     let mut child = command.spawn()?;
     let exit_status = child.wait()?;
@@ -472,7 +533,17 @@ fn open_spawn(command: &mut Command) -> Result<()> {
     Ok(())
 }
 
-fn short_help() -> Result<()> {
+fn usage_cli() -> Result<(), CliError> {
+    println!("Usage...");
+    Ok(())
+}
+
+fn help_cli() -> Result<(), CliError> {
+    println!("Help...");
+    Ok(())
+}
+
+fn help_shell_short() -> IOResult<()> {
     let indent = 20;
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     write_flags(&mut stdout, &[r#"Ctrl-C"#], indent, "Interrupt printing results")?;
@@ -482,8 +553,8 @@ fn short_help() -> Result<()> {
     Ok(())
 }
 
-fn help() -> Result<()>{
-    short_help()?;
+fn help_shell() -> Result<(), CliError> {
+    help_shell_short()?;
     let indent = 20;
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     write_flags(&mut stdout, &[r#"\q"#], indent, "quit application")?;
@@ -543,14 +614,14 @@ fn help() -> Result<()>{
     Ok(())
 }
 
-fn write_section(stdout: &mut StandardStream, text: &str) -> Result<()> {
+fn write_section(stdout: &mut StandardStream, text: &str) -> IOResult<()> {
     stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
     writeln!(stdout, "\n{}", text)?;
     stdout.set_color(&ColorSpec::new())?;
     Ok(())
 }
 
-fn write_flags(stdout: &mut StandardStream, flags: &[&str], indent: usize, description: &str) -> Result<()> {
+fn write_flags(stdout: &mut StandardStream, flags: &[&str], indent: usize, description: &str) -> IOResult<()> {
     let mut pos = 4;
     write!(stdout, "    ")?;
     for (index, flag) in flags.iter().enumerate() {
@@ -576,18 +647,20 @@ fn print_error() {
     let _ = stderr.write_all(b": ");
 }
 
-fn update_cli() -> clap::Command {
-    clap::Command::new("update")
-    .about("Rescan folders and update the database")
+fn update(config: &Config, args: &mut Args) -> Result<(), CliError> {
+    if let Some(arg) = args.next() {
+        return Err(CliError::InvalidUpdateArgument(arg));
+    }
+    update_impl(config)
 }
 
-fn update(config: &Config) -> Result<i32> {
+fn update_impl(config: &Config) -> Result<(), CliError> {
     let volume_info = get_volume_info(&config)
-    .ok_or(Error::new(ErrorKind::Other, "No database path set"))?;
+    .ok_or(CliError::NoDatabaseFound)?;
     let sink = UpdateSink {
         stdout: &mut stdout(),
         stderr: &mut stderr(),
     };
     fsidx::update(volume_info, Settings::WithFileSizes, sink);
-    Ok(0)
+    Ok(())
 }
