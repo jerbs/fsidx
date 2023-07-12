@@ -1,4 +1,5 @@
 use fastvlq::ReadVu64Ext;
+use glob::PatternError;
 use std::convert::TryFrom;
 use std::ffi::OsStr;
 use std::fmt::Display;
@@ -27,6 +28,7 @@ pub enum LocateError {
     WritingResultFailed(std::io::Error),
     Interrupted,
     BrokenPipe,
+    GlobPatternError(String, PatternError),
 }
 
 impl From<std::io::Error> for LocateError {
@@ -56,8 +58,7 @@ pub fn locate<F: FnMut(LocateEvent)->IOResult<()>>(volume_info: Vec<VolumeInfo>,
 
 pub fn locate_volume<F: FnMut(LocateEvent)->IOResult<()>>(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, interrupt: &Option<Arc<AtomicBool>>, f: &mut F) -> Result<(), LocateError> {    
     let mut reader = FileIndexReader::new(&volume_info.database)?;
-    let filter = filter::compile(&filter)
-    .map_err(|_| Error::new(ErrorKind::Other, "pattern error"))?;
+    let filter = filter::compile(&filter)?;
     loop {
         if interrupt.as_ref().map(|v| v.load(Ordering::Relaxed)).unwrap_or(false) {
             return Err(LocateError::Interrupted);
@@ -140,10 +141,11 @@ impl Display for LocateError {
         match self {
             LocateError::ExpectedFsidFile => f.write_str("Expected fsdb file"),
             LocateError::UnexpectedEof => f.write_str("Unexpected end of file"),
-            LocateError::ReadingFileFailed(_) => f.write_fmt(format_args!("")),
-            LocateError::WritingResultFailed(_) => f.write_fmt(format_args!("")),
+            LocateError::ReadingFileFailed(err) => f.write_fmt(format_args!("Reading database failed: {}", err)),
+            LocateError::WritingResultFailed(err) => f.write_fmt(format_args!("Writing results failed: {}", err)),
             LocateError::Interrupted => f.write_str("Interrupted"),
             LocateError::BrokenPipe => f.write_str("Boken pipe"),
+            LocateError::GlobPatternError(glob, err) => f.write_fmt(format_args!("Glob pattern error for `{}`: {}", glob, err)),
         }
     }
 }

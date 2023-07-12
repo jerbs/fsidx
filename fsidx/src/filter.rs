@@ -1,4 +1,5 @@
-use glob::{Pattern, MatchOptions, PatternError};
+use glob::{Pattern, MatchOptions};
+use crate::locate::LocateError;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum FilterToken {
@@ -37,7 +38,7 @@ enum Mode {
     Glob,
 }
 
-pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, PatternError> {
+pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, LocateError> {
     let mut result = Vec::new();
     let mut mode: Mode = Mode::Auto;
     let mut case_sensitive = false;
@@ -66,7 +67,13 @@ pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, Patte
                 if mode == Mode::Smart &&  case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.clone())); };
                 if mode == Mode::Smart && !case_sensitive &&  smart_spaces { expand_smart_spaces(text.to_lowercase(), same_order, &mut result); };
                 if mode == Mode::Smart && !case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.to_lowercase())); };
-                if mode == Mode::Glob { result.push(CompiledFilterToken::Glob(Pattern::new(text.as_str())?, match_options.clone())) };
+                if mode == Mode::Glob {
+                    result.push(CompiledFilterToken::Glob(
+                        Pattern::new(text.as_str())
+                            .map_err(|err| LocateError::GlobPatternError(text.clone(), err))?,
+                        match_options.clone()
+                    ))
+                };
             },
             FilterToken::AnyOrder => { same_order = false; result.push(CompiledFilterToken::AnyOrder); }
             FilterToken::SameOrder => { same_order = true; result.push(CompiledFilterToken::SameOrder); }
