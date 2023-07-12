@@ -1,4 +1,4 @@
-use fsidx::{FilterToken, LocateResult, Metadata};
+use fsidx::{FilterToken, LocateEvent, Metadata};
 use std::collections::VecDeque;
 use std::os::unix::prelude::OsStrExt;
 use std::env::Args;
@@ -109,9 +109,9 @@ fn print_size(stdout: &mut StandardStream, size: u64) -> IOResult<()> {
     Ok(())
 }
 
-fn print_locate_result(stdout: &mut StandardStream, res: &LocateResult) -> IOResult<()> {
+fn print_locate_result(stdout: &mut StandardStream, res: &LocateEvent) -> IOResult<()> {
     match *res {
-        LocateResult::Entry(path, Metadata { size: Some(size) } ) => {
+        LocateEvent::Entry(path, Metadata { size: Some(size) } ) => {
             stdout.write_all(path.as_os_str().as_bytes())?;
             stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
             stdout.write_all(b" (")?;
@@ -120,29 +120,29 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateResult) -> IORes
             stdout.set_color(&ColorSpec::new())?;
             stdout.write_all(b"\n")?;
         },
-        LocateResult::Entry(path, Metadata { size:None } ) => {
+        LocateEvent::Entry(path, Metadata { size:None } ) => {
             stdout.write_all(path.as_os_str().as_bytes())?;
             stdout.write_all(b"\n")?;
         },
-        LocateResult::Finished => {},
-        LocateResult::Interrupted => {
+        LocateEvent::Finished => {},
+        LocateEvent::Interrupted => {
             stdout.write(b"CTRL-C\n")?;
         },
-        LocateResult::Searching(path) => {
+        LocateEvent::Searching(path) => {
             if verbosity() {
                 stdout.write_all(b"Searching: ")?;
                 stdout.write_all(path.as_os_str().as_bytes())?;
                 stdout.write_all(b"\n")?;
             }
         },
-        LocateResult::SearchingFinished(path) => {
+        LocateEvent::SearchingFinished(path) => {
             if verbosity() {
                 stdout.write_all(b"Searching  ")?;
                 stdout.write_all(path.as_os_str().as_bytes())?;
                 stdout.write_all(b" finished\n")?;
             }
         },
-        LocateResult::SearchingFailed(path, error) => {
+        LocateEvent::SearchingFailed(path, error) => {
             stdout.write_all(b"Searching ")?;
             stdout.write_all(path.as_os_str().as_bytes())?;
             stdout.write_fmt(format_args!(" failed: {}\n", error))?;
@@ -151,10 +151,10 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateResult) -> IORes
     Ok(())
 }
 
-pub(crate) fn locate(config: &Config, args: &mut Args, interrupt: Option<Arc<AtomicBool>>) -> Result<(), CliError> {
+pub(crate) fn locate(config: &Config, args: &mut Args) -> Result<(), CliError> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     let filter_token = locate_filter(args)?;
-    locate_impl(config, filter_token, interrupt, |res| {
+    locate_impl(config, filter_token, None, |res| {
         print_locate_result(&mut stdout, &res)
     })?;
     Ok(())
@@ -165,7 +165,7 @@ pub(crate) fn locate_shell(config: &Config, mut token_it: TokenIterator, interru
     let mut selection = Vec::new();
     let filter_token = locate_filter_interactive(&mut token_it)?;
     locate_impl(config, filter_token, interrupt, |res| {
-        if let LocateResult::Entry(path, _) = res {
+        if let LocateEvent::Entry(path, _) = res {
             let pb = path.to_path_buf();
             selection.push(pb);
             let index = selection.len();
@@ -178,9 +178,12 @@ pub(crate) fn locate_shell(config: &Config, mut token_it: TokenIterator, interru
     Ok(selection)
 }
 
-fn locate_impl<F: FnMut(LocateResult)->IOResult<()>>(config: &Config, filter_token: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<(), CliError> {
+fn locate_impl<F: FnMut(LocateEvent)->IOResult<()>>(config: &Config, filter_token: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<(), CliError> {
     let volume_info = get_volume_info(&config)
     .ok_or(CliError::NoDatabaseFound)?;
-    fsidx::locate(volume_info, filter_token, interrupt, f)
-    .map_err(|err| CliError::LocateError(err))
+    match fsidx::locate(volume_info, filter_token, interrupt, f) {
+        Ok(_) => Ok(()),
+        Err(fsidx::LocateError::BrokenPipe) => Ok(()),     // No error for: fsidx | head -n 5
+        Err(err) => Err(CliError::LocateError(err)),
+    }
 }

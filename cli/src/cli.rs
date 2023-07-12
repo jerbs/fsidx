@@ -22,7 +22,7 @@ pub(crate) enum CliError {
     InvalidOption(String),
     InvalidSubCommand(String),
     ConfigError(ConfigError),
-    LocateError(std::io::Error),
+    LocateError(fsidx::LocateError),
     NoDatabaseFound,
     TtyConfigurationFailed(std::io::Error),
     CreatingSignalHandlerFailed(std::io::Error),
@@ -90,7 +90,7 @@ fn process_main_command() -> Result<(), CliError> {
     if let Some(sub_command) = sub_command {
         match sub_command.as_str() {
             "shell"  => { shell(config, &mut args) },
-            "locate" => { locate(&config, &mut args, None) },
+            "locate" => { locate(&config, &mut args) },
             "update" => { update(&config, &mut args) },
             "help"   => { help_cli() },
             _        => { Err(CliError::InvalidSubCommand(sub_command)) }
@@ -124,14 +124,6 @@ fn parse_main_command(args: &mut Args) -> Result<(MainOptions, Option<String>), 
     Ok((main_options, sub_command))
 }
 
-fn get_path_buf(args: &mut Args) -> Option<PathBuf>  {
-    if let Some(text) = args.next() {
-        Some(PathBuf::from(text))
-    } else {
-        None
-    }
-}
-
 impl MainOptions {
     fn parse(&mut self, option: &str, args: &mut Args) -> Result<(), CliError> {
         match option {
@@ -143,5 +135,13 @@ impl MainOptions {
             val => { return Err(CliError::InvalidOption(val.to_string())); },
         }
         Ok(())
+    }
+}
+
+fn get_path_buf(args: &mut Args) -> Option<PathBuf>  {
+    if let Some(text) = args.next() {
+        Some(PathBuf::from(text))
+    } else {
+        None
     }
 }

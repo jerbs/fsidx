@@ -1,3 +1,4 @@
+use fsidx::LocateError;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 use signal_hook::iterator::Signals;
@@ -5,7 +6,7 @@ use signal_hook::consts::signal::SIGINT;
 use std::os::unix::prelude::OsStrExt;
 use std::process::Command;
 use std::{env::Args, process};
-use std::io::{Error, ErrorKind, Result as IOResult, stdout, stderr, Write};
+use std::io::{Error, Result as IOResult, stdout, stderr, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,7 +30,7 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
         .map_err(|err: Error| CliError::TtyConfigurationFailed(err))?;
     let interrupt = Arc::new(AtomicBool::new(false));
     let mut signals = Signals::new(&[SIGINT])   // Ctrl-C
-        .map_err(|err| CliError::CreatingSignalHandlerFailed(err))?;
+        .map_err(CliError::CreatingSignalHandlerFailed)?;
     let interrupt_for_signal_handler = interrupt.clone();
     std::thread::spawn(move || {
         let interrupt = interrupt_for_signal_handler;
@@ -66,8 +67,8 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
                 match process_shell_line(&config, &line, interrupt.clone(), &selection) {
                     Ok(Some(s)) => {selection = Some(s);},
                     Ok(None) => {},
-                    Err(CliError::LocateError(err)) if err.kind() == ErrorKind::Interrupted => {println!("CTRL-C");},
-                    Err(CliError::LocateError(err)) if err.kind() == ErrorKind::BrokenPipe => {println!("EOF");},
+                    Err(CliError::LocateError(LocateError::Interrupted)) => {println!("CTRL-C");},
+                    Err(CliError::LocateError(LocateError::BrokenPipe))  => {println!("EOF");},
                     Err(err) => { print_error(); eprintln!("{:?}", err);},    // FIXME: Replace debug print
                 };
             },
