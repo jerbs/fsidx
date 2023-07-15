@@ -5,7 +5,7 @@ use crate::cli::CliError;
 use crate::config::{Config, get_volume_info};
 
 
-pub(crate) fn update(config: &Config, args: &mut Args) -> Result<(), CliError> {
+pub(crate) fn update_cli(config: &Config, args: &mut Args) -> Result<(), CliError> {
     if let Some(arg) = args.next() {
         return Err(CliError::InvalidUpdateArgument(arg));
     }

@@ -40,7 +40,7 @@ impl Iterator for TokenIter {
     }
 }
 
-pub(crate) fn locate(config: &Config, args: &mut Args) -> Result<(), CliError> {
+pub(crate) fn locate_cli(config: &Config, args: &mut Args) -> Result<(), CliError> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     let filter_token = locate_filter(args)?;
     locate_impl(config, filter_token, None, |res| {

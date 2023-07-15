@@ -3,9 +3,9 @@ use std::io::{Error, stdout, Write};
 use std::path::PathBuf;
 use crate::help::{help_cli, print_version, usage_cli};
 use crate::config::{Config, ConfigError, find_and_load, load_from_path};
-use crate::locate::locate;
+use crate::locate::locate_cli;
 use crate::shell::shell;
-use crate::update::update;
+use crate::update::update_cli;
 use crate::verbosity::{verbosity, set_verbosity};
 
 
@@ -90,8 +90,8 @@ fn process_main_command() -> Result<(), CliError> {
     if let Some(sub_command) = sub_command {
         match sub_command.as_str() {
             "shell"  => { shell(config, &mut args) },
-            "locate" => { locate(&config, &mut args) },
-            "update" => { update(&config, &mut args) },
+            "locate" => { locate_cli(&config, &mut args) },
+            "update" => { update_cli(&config, &mut args) },
             "help"   => { help_cli() },
             _        => { Err(CliError::InvalidSubCommand(sub_command)) }
         }
