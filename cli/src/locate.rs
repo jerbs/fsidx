@@ -1,5 +1,4 @@
 use fsidx::{FilterToken, LocateEvent, Metadata};
-use std::collections::VecDeque;
 use std::os::unix::prelude::OsStrExt;
 use std::env::Args;
 use std::io::{Result as IOResult, Write};
@@ -9,50 +8,25 @@ use std::sync::atomic::AtomicBool;
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use crate::cli::CliError;
 use crate::config::{Config, get_volume_info};
-use crate::tokenizer::{TokenIterator, Token};
+use crate::tokenizer::{Token, tokenize_cli, tokenize_shell};
 use crate::verbosity::verbosity;
 
 
-struct TokenVec {
-    token: VecDeque<Token>,
-}
-
-struct TokenIter {
-    remainder: VecDeque<Token>,
-}
-
-impl IntoIterator for TokenVec {
-    type Item = Token;
-    type IntoIter = TokenIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        TokenIter {
-            remainder: self.token,
-        }
-    }
-}
-
-impl Iterator for TokenIter {
-    type Item = Token;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.remainder.pop_front()
-    }
-}
-
 pub(crate) fn locate_cli(config: &Config, args: &mut Args) -> Result<(), CliError> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
-    let filter_token = locate_filter(args)?;
+    let token = tokenize_cli(args)?;
+    let filter_token = locate_filter(token)?;
     locate_impl(config, filter_token, None, |res| {
         print_locate_result(&mut stdout, &res)
     })?;
     Ok(())
 }
 
-pub(crate) fn locate_shell(config: &Config, mut token_it: TokenIterator, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>, CliError> {
+pub(crate) fn locate_shell(config: &Config, line: &str, interrupt: Option<Arc<AtomicBool>>) -> Result<Vec<PathBuf>, CliError> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     let mut selection = Vec::new();
-    let filter_token = locate_filter_interactive(&mut token_it)?;
+    let token = tokenize_shell(line)?;
+    let filter_token = locate_filter(token)?;
     locate_impl(config, filter_token, interrupt, |res| {
         if let LocateEvent::Entry(path, _) = res {
             let pb = path.to_path_buf();
@@ -77,35 +51,11 @@ fn locate_impl<F: FnMut(LocateEvent)->IOResult<()>>(config: &Config, filter_toke
     }
 }
 
-fn locate_filter(args: &mut Args) -> Result<Vec<FilterToken>, CliError> {
-    let mut token = VecDeque::new();
-    for text in args {
-        if text.starts_with("--") {
-            let long_option = &text[1..];
-            token.push_back(Token::Option(long_option.to_string()));
-        } else if text.starts_with("-") {
-            let mut remainder = &text[1..];
-            while !remainder.is_empty() {
-                let long_option = &remainder[1..2];
-                remainder = &remainder[2..];
-                token.push_back(Token::Option(long_option.to_string()));
-            }
-        } else {
-            token.push_back(Token::Text(String::from(text)));
-        }
-    }
-    let token_vec = TokenVec {
-        token
-    };
-    locate_filter_interactive(&mut token_vec.into_iter())
-}
-
-fn locate_filter_interactive(token_it: &mut dyn Iterator<Item = Token>) -> Result<Vec<FilterToken>, CliError> {
+fn locate_filter(token: Vec<Token>) -> Result<Vec<FilterToken>, CliError> {
     let mut filter: Vec<FilterToken> = Vec::new();
-    while let Some(token) = token_it.next() {
+    for token in token {
         let filter_token= match token {
             Token::Text(text) => FilterToken::Text(text),
-            Token::Backslash(text) => FilterToken::Text(text),
             Token::Option(text) => match text.as_str() {
                 "case_sensitive"   | "c" => FilterToken::CaseSensitive,
                 "case_insensitive" | "i" => FilterToken::CaseInSensitive,

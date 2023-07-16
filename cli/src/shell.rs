@@ -16,7 +16,7 @@ use crate::config::Config;
 use crate::expand::{Expand, MatchRule};
 use crate::help::{help_shell, help_shell_short};
 use crate::locate::locate_shell;
-use crate::tokenizer::{tokenize, TokenIterator, Token};
+use crate::tokenizer::{Token, tokenize_shell};
 use crate::tty::set_tty;
 use crate::update::update_shell;
 use crate::verbosity::verbosity;
@@ -93,40 +93,40 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
 }
 
 fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<Option<Vec<PathBuf>>, CliError>{
-    let mut token_it = tokenize(line).into_iter();
-    if let Some(Token::Backslash(command)) = token_it.next() {
-        match command.as_str() {
-            "q" if token_it.next().is_none() => {process::exit(0);},
-            "o" => {open_backslash_command(token_it, selection)?;},
-            "u" if token_it.next().is_none() => {update_shell(config)?;},
-            "h" => {let _ = help_shell();},
-            _ => {let _ = help_shell_short();},
-        };
-        return Ok(None);
-    }
-    let mut token_it = tokenize(line).into_iter();
-    if let Some(Token::Text(first)) = token_it.next() {
-        if let Ok(_) = first.parse::<MatchRule>() {
-            let token_it = tokenize(line).into_iter();
-            open_index_command(config, token_it, selection)?;
+    let token = tokenize_shell(line)?;
+    if let Some(Token::Text(command)) = token.first() {
+        // Backslah commands:
+        if &command[0..1] == "\\" {
+            match command.as_str() {
+                "\\q" if token.len() == 1 => { process::exit(0); },
+                "\\o" => { open_backslash_command(&token[1..], selection)?; },
+                "\\u" if token.len() == 1 => { update_shell(config)?; },
+                "\\h" => { let _ = help_shell(); },
+                _ => { let _ = help_shell_short(); },
+            };
             return Ok(None);
         }
-    }
-    if tokenize(line).into_iter().next().is_some() {
-        return locate_shell(
+        // Open commands:
+        if let Ok(_) = command.parse::<MatchRule>() {
+            open_index_command(config, &token, selection)?;
+            return Ok(None);
+        }
+        // Locate query:
+        locate_shell(
             config,
-            tokenize(line).into_iter(),
-            Some(interrupt)).map(|v| Some(v));    
+            line,
+            Some(interrupt)
+        ).map(|v| Some(v))
     } else {
-        return Ok(None);
+        Ok(None)
     }
 }
 
-fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> IOResult<()> {
+fn open_backslash_command(token: &[Token], selection: &Option<Vec<PathBuf>>) -> IOResult<()> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found = false;
-        for token in token_it {
+        for token in token {
             match token {
                 crate::tokenizer::Token::Text(text) => {
                     if let Ok(index) = text.parse::<usize>() {
@@ -148,10 +148,6 @@ fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBu
                         eprintln!("Invalid index '{}'.", text);
                     }
                 },
-                crate::tokenizer::Token::Backslash(text) => {
-                    print_error();
-                    eprintln!("No backslash command '\\{}' expected.", text);
-                },
                 crate::tokenizer::Token::Option(text) => {
                     print_error();
                     eprintln!("Invalid option '-{}'.", text);
@@ -168,7 +164,7 @@ fn open_backslash_command(token_it: TokenIterator, selection: &Option<Vec<PathBu
     Ok(())
 }
 
-fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {
+fn open_index_command(config: &Config, token_it: &[Token], selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found = false;
@@ -178,9 +174,10 @@ fn open_index_command(config: &Config, token_it: TokenIterator, selection: &Opti
                     if let Ok(match_rule) = text.parse::<MatchRule>() {
                         let expand = Expand::new(config, match_rule, selection);
                         expand.foreach(|path| open_append(&mut command, path, &mut found))?;
+                    } else {
+                        return Err(CliError::InvalidMatchRule(text.clone()));
                     }
                 },
-                crate::tokenizer::Token::Backslash(_) => {},
                 crate::tokenizer::Token::Option(_) => {},
             };
         }

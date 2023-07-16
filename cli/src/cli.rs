@@ -5,6 +5,7 @@ use crate::help::{help_cli, print_version, usage_cli};
 use crate::config::{Config, ConfigError, find_and_load, load_from_path};
 use crate::locate::locate_cli;
 use crate::shell::shell;
+use crate::tokenizer::{Token, tokenize_arg};
 use crate::update::update_cli;
 use crate::verbosity::{verbosity, set_verbosity};
 
@@ -30,6 +31,10 @@ pub(crate) enum CliError {
     InvalidLocateFilterOption(String),
     InvalidShellArgument(String),
     InvalidUpdateArgument(String),
+    InvalidMatchRule(String),
+    MissingEscapedCharacter,
+    MissingClosingQuote,
+    InvalidEscape(char),
 }
 
 impl From<Error> for CliError {
@@ -102,21 +107,15 @@ fn process_main_command() -> Result<(), CliError> {
 
 fn parse_main_command(args: &mut Args) -> Result<(MainOptions, Option<String>), CliError>  {
     let mut main_options = MainOptions::default();
-    let sub_command = loop {
-        if let Some(item) = args.next() {
-            if item.starts_with("--") {
-                let long_option = &item[2..];
-                main_options.parse(long_option, args)?;
-            } else if item.starts_with("-") {
-                let mut remainder = &item[1..];
-                while !remainder.is_empty() {
-                    let short_option = &remainder[0..1];
-                    remainder = &remainder[1..];
-                    main_options.parse(short_option, args)?;
-                }
-            } else {
-                break Some(item);
-            };
+    let sub_command = 'outer: loop {
+        if let Some(arg) = args.next() {
+            let tokens = tokenize_arg(arg.as_str());
+            for token in tokens {
+                match token {
+                    Token::Text(arg) => { break 'outer Some(arg); },
+                    Token::Option(opt) => { main_options.parse(opt.as_str(), args)?; },
+                };
+            }
         } else {
             break None;
         }
