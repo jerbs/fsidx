@@ -1,5 +1,4 @@
 use fastvlq::ReadVu64Ext;
-use glob::PatternError;
 use std::convert::TryFrom;
 use std::ffi::OsStr;
 use std::fmt::Display;
@@ -28,7 +27,7 @@ pub enum LocateError {
     WritingResultFailed(std::io::Error),
     Interrupted,
     BrokenPipe,
-    GlobPatternError(String, PatternError),
+    GlobPatternError(String, globset::Error),
 }
 
 impl From<std::io::Error> for LocateError {

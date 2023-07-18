@@ -1,4 +1,4 @@
-use glob::{Pattern, MatchOptions};
+use globset::{GlobBuilder, GlobMatcher};
 use crate::locate::LocateError;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -11,16 +11,15 @@ pub enum FilterToken {
     WholePath,          // default
     LastElement,
     SmartSpaces(bool),  // default: on
-    RequireLiteralSeparator(bool),  // default: off
-    RequireLiteralLeadingDot(bool), // default: off
+    LiteralSeparator(bool),  // default: off
     Auto,
     Smart,
     Glob,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum CompiledFilterToken {
-    Glob(Pattern, MatchOptions),
+    Glob(GlobMatcher),
     SmartText(String),
     SmartNext(String),
     CaseSensitive,
@@ -44,15 +43,11 @@ pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, Locat
     let mut case_sensitive = false;
     let mut smart_spaces = true;
     let mut same_order = false;
-    let mut match_options = MatchOptions {
-        case_sensitive,
-        require_literal_separator: false,
-        require_literal_leading_dot: false,
-    };
+    let mut literal_separator = false;
     for token in filter {
         match token {
-            FilterToken::CaseSensitive   => { case_sensitive = true; match_options.case_sensitive = true; result.push(CompiledFilterToken::CaseSensitive); },
-            FilterToken::CaseInSensitive => { case_sensitive = false; match_options.case_sensitive = false; result.push(CompiledFilterToken::CaseInSensitive); },
+            FilterToken::CaseSensitive   => { case_sensitive = true; result.push(CompiledFilterToken::CaseSensitive); },
+            FilterToken::CaseInSensitive => { case_sensitive = false; result.push(CompiledFilterToken::CaseInSensitive); },
             FilterToken::Text(text) => {
                 let mode = if mode == Mode::Auto {
                     if text.contains("*") { Mode::Glob }
@@ -68,11 +63,15 @@ pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, Locat
                 if mode == Mode::Smart && !case_sensitive &&  smart_spaces { expand_smart_spaces(text.to_lowercase(), same_order, &mut result); };
                 if mode == Mode::Smart && !case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.to_lowercase())); };
                 if mode == Mode::Glob {
-                    result.push(CompiledFilterToken::Glob(
-                        Pattern::new(text.as_str())
-                            .map_err(|err| LocateError::GlobPatternError(text.clone(), err))?,
-                        match_options.clone()
-                    ))
+                    let glob_matcher = GlobBuilder::new(text.as_str())
+                        .case_insensitive(case_sensitive)
+                        .literal_separator(literal_separator)
+                        .backslash_escape(true)
+                        .empty_alternates(true)
+                        .build()
+                        .map_err(|err| LocateError::GlobPatternError(text.clone(), err))?
+                        .compile_matcher();
+                    result.push(CompiledFilterToken::Glob(glob_matcher));
                 };
             },
             FilterToken::AnyOrder => { same_order = false; result.push(CompiledFilterToken::AnyOrder); }
@@ -80,8 +79,7 @@ pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, Locat
             FilterToken::WholePath => { result.push(CompiledFilterToken::WholePath); },
             FilterToken::LastElement => { result.push(CompiledFilterToken::LastElement); },
             FilterToken::SmartSpaces(on) => { smart_spaces = *on; },
-            FilterToken::RequireLiteralSeparator(on) => { match_options.require_literal_separator = *on; },
-            FilterToken::RequireLiteralLeadingDot(on) => {match_options.require_literal_leading_dot = *on; },
+            FilterToken::LiteralSeparator(on) => { literal_separator = *on; },
             FilterToken::Auto => { mode = Mode::Auto; },
             FilterToken::Smart => { mode = Mode::Smart; },
             FilterToken::Glob => { mode = Mode::Glob; },
@@ -164,9 +162,9 @@ pub fn apply(text: &str, filter: &[CompiledFilterToken]) -> bool {
             CompiledFilterToken::LastElement if !b_last_element => {b_last_element = true; pos = if pos > offset { pos - offset } else { 0 }; true},
             CompiledFilterToken::WholePath => false,
             CompiledFilterToken::LastElement => false,
-            CompiledFilterToken::Glob(pattern, options) if  b_last_element => pattern.matches_with(last_text, *options),
-            CompiledFilterToken::Glob(pattern, options) if !b_last_element => pattern.matches_with(text, *options),
-            CompiledFilterToken::Glob(_, _) => false,
+            CompiledFilterToken::Glob(glob) if  b_last_element => glob.is_match(last_text),
+            CompiledFilterToken::Glob(glob) if !b_last_element => glob.is_match(text),
+            CompiledFilterToken::Glob(_) => false,
         } {
             return false
         }
@@ -381,7 +379,8 @@ mod tests {
             CompiledFilterToken::AnyOrder,
             CompiledFilterToken::SmartText("e".to_string()),
         ];
-        assert_eq!(actual, expected);
+        // Can't use assert_eq! here, since PartialEq is not implemented for GlobMatcher.
+        check_compiled_filter(actual, expected);
     }
 
     #[test]
@@ -395,7 +394,26 @@ mod tests {
             CompiledFilterToken::SmartNext("d".to_string()),
             CompiledFilterToken::AnyOrder,
         ];
-        assert_eq!(actual, expected);
+        check_compiled_filter(actual, expected);
+    }
+
+    fn check_compiled_filter(actual: Vec<CompiledFilterToken>, expected: Vec<CompiledFilterToken>) {
+        assert_eq!(actual.len(), expected.len());
+        for (idx, (a,b)) in expected.iter().zip(actual.iter()).enumerate() {
+            let ok = match (a, b) {
+                (CompiledFilterToken::Glob(a), CompiledFilterToken::Glob(b)) => a.glob() == b.glob(),
+                (CompiledFilterToken::SmartText(a), CompiledFilterToken::SmartText(b)) => a == b,
+                (CompiledFilterToken::SmartNext(a), CompiledFilterToken::SmartNext(b)) => a == b,
+                (CompiledFilterToken::CaseSensitive, CompiledFilterToken::CaseSensitive) => true,
+                (CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive) => true,
+                (CompiledFilterToken::AnyOrder, CompiledFilterToken::AnyOrder) => true,
+                (CompiledFilterToken::SameOrder, CompiledFilterToken::SameOrder) => true,
+                (CompiledFilterToken::WholePath, CompiledFilterToken::WholePath) => true,
+                (CompiledFilterToken::LastElement, CompiledFilterToken::LastElement) => true,
+                (_, _) => false,
+            };
+            assert!(ok, "Element {idx} not as expected: {a:?} != {b:?}");
+        }
     }
 
     #[test]
@@ -405,7 +423,7 @@ mod tests {
 
     #[test]
     fn glob_recursive_wildcard() {
-        assert_eq!(process(&[FilterToken::Glob,  FilterToken::RequireLiteralSeparator(false), t("/**/*s")]), [S1]);
+        assert_eq!(process(&[FilterToken::Glob,  FilterToken::LiteralSeparator(false), t("/**/*s")]), [S1]);
     }
 
     #[test]
@@ -415,19 +433,11 @@ mod tests {
 
     #[test]
     fn glob_require_literal_separator() {
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(false), t("/*i")]), [S2, S3]);
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(true), t("/*i")]), EMPTY);
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(true), t("/*/*/*/*i")]), [S2, S3]);
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(true), t("/**/*i")]), [S2, S3]);
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralSeparator(true), t("/**/eins")]), [S1]);
-    }
-
-    #[test]
-    fn glob_require_literal_leading_dir() {
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(false), t("*.txt")]), [S7]);
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*.txt")]), EMPTY);
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*/*.txt")]), EMPTY);
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::RequireLiteralLeadingDot(true), t("*/.*.txt")]), [S7]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::LiteralSeparator(false), t("/*i")]), [S2, S3]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::LiteralSeparator(true), t("/*i")]), EMPTY);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::LiteralSeparator(true), t("/*/*/*/*i")]), [S2, S3]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::LiteralSeparator(true), t("/**/*i")]), [S2, S3]);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::LiteralSeparator(true), t("/**/eins")]), [S1]);
     }
 
     #[test]
@@ -443,6 +453,6 @@ mod tests {
     fn glob_on_last_element_only() {
         assert_eq!(process(&[FilterToken::Glob, FilterToken::LastElement, t("*.txt")]), [S7]);
         assert_eq!(process(&[FilterToken::Glob, FilterToken::WholePath, t("*.txt")]), [S7]);
-        assert_eq!(process(&[FilterToken::Glob, FilterToken::WholePath, FilterToken::RequireLiteralSeparator(true), t("*.txt")]), EMPTY);
+        assert_eq!(process(&[FilterToken::Glob, FilterToken::WholePath, FilterToken::LiteralSeparator(true), t("*.txt")]), EMPTY);
     }
 }

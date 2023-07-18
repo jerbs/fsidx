@@ -63,13 +63,11 @@ fn locate_filter(token: Vec<Token>) -> Result<Vec<FilterToken>, CliError> {
                 "same_order"       | "s" => FilterToken::SameOrder,
                 "whole_path"       | "w" => FilterToken::WholePath,
                 "last_element"     | "l" => FilterToken::LastElement,
-                "require_literal_separator"   | "ls" | "ls1" => FilterToken::RequireLiteralSeparator(true),
-                "no_literal_separator"        | "ls0"        => FilterToken::RequireLiteralSeparator(false),
-                "require_literal_leading_dot" | "ld" | "ld1" => FilterToken::RequireLiteralLeadingDot(true),
-                "no_literal_leading_dot"      | "ld0"        => FilterToken::RequireLiteralLeadingDot(false),
-                "auto"  | "m0" => FilterToken::Auto,
-                "smart" | "m1" => FilterToken::Smart,
-                "glob"  | "m2" => FilterToken::Glob,
+                "literal_separator"    |  "ls" => FilterToken::LiteralSeparator(true),
+                "no_literal_separator" | "nls" => FilterToken::LiteralSeparator(false),
+                "auto"  | "-0" => FilterToken::Auto,
+                "plain" | "-1" => FilterToken::Smart,
+                "glob"  | "-2" => FilterToken::Glob,
                 _  => {
                     return Err(CliError::InvalidLocateFilterOption(text));
                 },

@@ -10,7 +10,7 @@ keywords = ["locate"]
 
 [dependencies]
 fastvlq = "1.1.1"
-glob = "0.3.1"
+globset = "0.4.10"
 natord = "1.0.9"
 nix = "0.26.2"
 num_cpus = "1.13.1"
