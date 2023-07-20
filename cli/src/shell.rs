@@ -111,15 +111,13 @@ fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, s
             open_index_command(config, &token, selection)?;
             return Ok(None);
         }
-        // Locate query:
-        locate_shell(
-            config,
-            line,
-            Some(interrupt)
-        ).map(|v| Some(v))
-    } else {
-        Ok(None)
     }
+    // Locate query:
+    locate_shell(
+        config,
+        line,
+        Some(interrupt)
+    ).map(|v| Some(v))
 }
 
 fn open_backslash_command(token: &[Token], selection: &Option<Vec<PathBuf>>) -> IOResult<()> {

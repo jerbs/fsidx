@@ -135,3 +135,23 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateEvent) -> IOResu
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn process(text: &str, query: &str) -> bool {
+        let token = tokenize_shell(query).unwrap();
+        let filter = locate_filter(token).unwrap();
+        let compiled = fsidx::compile(filter.as_slice()).unwrap();
+        fsidx::apply(text, &compiled)
+    }
+
+    #[test]
+    fn glob_case() {        
+        assert_eq!(process("File.mp4",  "-c File *.mp4"), true);
+        assert_eq!(process("File.mp4",  "-c file *.mp4"), false);
+        assert_eq!(process("File.mp4",  "file *.mp4"), true);
+    }
+
+}
