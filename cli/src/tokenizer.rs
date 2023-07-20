@@ -52,6 +52,7 @@ pub(crate) fn tokenize_shell(line: &str) -> Result<Vec<Token>, CliError> {
                     't' => {item.push('\t')},
                     'n' => {item.push('\n')},
                     'r' => {item.push('\r')},
+                    '\\' => {item.push('\\')},
                     ch => {return Err(CliError::InvalidEscape(ch));}
                 };
             } else {
@@ -210,13 +211,13 @@ mod tests {
     #[test]
     fn escaped_characters() {
         assert_eq!(
-            tokenize_shell(r#"All escaped characters are: "\"\t\n\r" ."#).unwrap(),
+            tokenize_shell(r#"All escaped characters are: "\"\t\n\r\\" ."#).unwrap(),
             vec!(
                 Token::Text("All".to_string()),
                 Token::Text("escaped".to_string()),
                 Token::Text("characters".to_string()),
                 Token::Text("are:".to_string()),
-                Token::Text("\"\t\n\r".to_string()),
+                Token::Text("\"\t\n\r\\".to_string()),
                 Token::Text(".".to_string()),
             )
         );
