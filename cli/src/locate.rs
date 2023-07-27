@@ -63,6 +63,8 @@ fn locate_filter(token: Vec<Token>) -> Result<Vec<FilterToken>, CliError> {
                 "same_order"       | "s" => FilterToken::SameOrder,
                 "whole_path"       | "w" => FilterToken::WholePath,
                 "last_element"     | "l" => FilterToken::LastElement,
+                "smart_spaces"     | "s1" => FilterToken::SmartSpaces(true),
+                "no_smart_spaces"  | "s0" => FilterToken::SmartSpaces(false),
                 "literal_separator"    |  "ls" => FilterToken::LiteralSeparator(true),
                 "no_literal_separator" | "nls" => FilterToken::LiteralSeparator(false),
                 "auto"  | "-0" => FilterToken::Auto,
