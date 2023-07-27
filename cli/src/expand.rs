@@ -1,46 +1,43 @@
-use std::ffi::OsString;
+use globset::GlobBuilder;
 use std::fmt::Debug;
-use std::io::{Error, ErrorKind, Result};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use fsidx::FileIndexReader;
+use nom::IResult;
+use crate::cli::CliError;
 
-use crate::config::{Config, get_volume_info};
-
-// 421.        -- Open single selected file
-// 421..       -- Open all selected files in same directory
-// 421...      -- Open all files in same directory
-// 421..jpg    -- Open all selected files in same directory with suffix
-// 421...jpg   -- Open all files in same directory with suffix
+// Selection refers to the indexed list with the last query result.
+// idx.           -- Open single file from selection
+// idx.-idx.      -- Opens range of files from selection
+// glob           -- Opens all matching files from selection
+// idx./path/glob -- Opens all matching files from selection
 
 pub struct Expand<'a> {
-    config: &'a Config,
-    match_rule: MatchRule,
+    open_rule: OpenRule,
     selection: &'a Vec<PathBuf>,
 }
 
 impl<'a> Expand<'a> {
-    pub fn new(config: &'a Config, match_rule: MatchRule, selection: &'a Vec<PathBuf>) -> Expand<'a> {
+    pub fn new(open_rule: OpenRule, selection: &'a Vec<PathBuf>) -> Expand<'a> {
         Expand {
-            config,
-            match_rule,
+            open_rule,
             selection,
         }
     }
 
-    pub fn foreach<F: FnMut(&Path)->Result<()>>(&self, f: F) -> Result<()> {
-        match &self.match_rule {
-            MatchRule::Index(index) => expand_single(*index, self.selection, f),
-            MatchRule::DirectoryOfSelection(index) => expand_directory_of_selection(*index, self.selection, f),
-            MatchRule::DirectoryOfFileIndex(index) => expand_directory_of_file_index(*index, self.selection, self.config, f),
-            MatchRule::DirectoryOfSelectionWithSuffix(index, suffix) => expand_directory_of_selection_with_suffix(*index, suffix, self.selection, f),
-            MatchRule::DirectoryOfFileIndexWithSuffix(index, suffix) => expand_directory_of_file_index_with_suffix(*index, suffix, self.selection, self.config, f),
+    pub(crate) fn foreach<F: FnMut(&Path)->Result<(), CliError>>(&self, mut f: F) -> Result<(), CliError> {
+        match &self.open_rule {
+            OpenRule::Glob(glob) => expand_glob(glob, self.selection, &mut f),
+            OpenRule::Index(index) => expand_index(*index, self.selection, &mut f),
+            OpenRule::IndexRange(start, end) => expand_index_range(*start, *end, self.selection, &mut f),
+            OpenRule::IndexGlob(index, glob) => expand_index_with_glob(*index, glob, self.selection, &mut f),
         }
     } 
 }
 
-// MatchRule::Index(index)
-fn expand_single<F: FnMut(&Path)->Result<()>>(index: usize, selection: & Vec<PathBuf>, mut f: F) -> Result<()> {
+
+
+// idx.           -- Open single file from selection
+fn expand_index<F: FnMut(&Path)->Result<(), CliError>>(index: usize, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
     let path = selection
     .get(index - 1)
     .map(|v| v.as_ref());
@@ -50,163 +47,81 @@ fn expand_single<F: FnMut(&Path)->Result<()>>(index: usize, selection: & Vec<Pat
     Ok(())
 }
 
-// MatchRule::DirectoryOfSelection(index)
-fn expand_directory_of_selection<F: FnMut(&Path)->Result<()>>(index: usize, selection: &Vec<PathBuf>, mut f: F) -> Result<()> {
-    let sel_path = selection.get(index - 1).ok_or(Error::new(ErrorKind::InvalidData, "Invalid index"))?;
-    let sel_dir = sel_path.parent().ok_or(Error::new(ErrorKind::InvalidData, "No parent"))?;
+// idx.-idx.      -- Opens range of files from selection
+fn expand_index_range<F: FnMut(&Path)->Result<(), CliError>>(start: usize, end: usize, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
+    for index in start..=end {
+        expand_index(index, selection, f)?;
+    }
+    Ok(())
+}
+
+// glob           -- Opens all matching files from selection
+fn expand_glob<F: FnMut(&Path)->Result<(), CliError>>(glob: &str, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
+    let glob_set = GlobBuilder::new(glob)
+        .case_insensitive(true)   // FIXME: Make this configurable.
+        .literal_separator(true)   // FIXME: Make this configurable.
+        .backslash_escape(true)
+        .empty_alternates(true)
+        .build()
+        .map_err(|err| CliError::GlobPatternError(glob.to_string(), err))?
+        .compile_matcher();
     for path in selection {
-        if path.starts_with(sel_dir) {
+        if glob_set.is_match(path) {
             f(path)?;
         }
     }
     Ok(())
 }
 
-// MatchRule::DirectoryOfFileIndex(index)
-fn expand_directory_of_file_index<F: FnMut(&Path)->Result<()>>(index: usize, selection: &Vec<PathBuf>, config: &Config, mut f: F) -> Result<()> {
-    if let Some(volume_info) = get_volume_info(config) {
-        for volume_info in volume_info {
-            let dir = if let Some(path) = selection.get(index - 1) {
-                let path: &Path = path.as_ref();
-                path.parent()
-            } else {
-                None
-            };
-            if let Some(dir) = dir {
-                if dir.starts_with(volume_info.folder) {
-                    if let Some(mut file_index_reader) = FileIndexReader::new(&volume_info.database).ok() {
-                        while let Ok(Some((path, _))) = file_index_reader.next() {
-                            if path.starts_with(dir) {
-                                f(path)?;
-                            }
-                        };
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-// MatchRule::DirectoryOfSelectionWithSuffix(index, suffix)
-fn expand_directory_of_selection_with_suffix<F: FnMut(&Path)->Result<()>>(index: usize, suffix: &OsString, selection: &Vec<PathBuf>, mut f: F) -> Result<()> {
-    let sel_path = selection.get(index - 1).ok_or(Error::new(ErrorKind::InvalidData, "Invalid index"))?;
-    let sel_dir = sel_path.parent().ok_or(Error::new(ErrorKind::InvalidData, "No parent"))?;
-    for path in selection {
-        if path.starts_with(sel_dir) {
-            if let Some(ext) = path.extension() {
-                if ext == suffix {
-                    f(path)?;
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-// MatchRule::DirectoryOfFileIndexWithSuffix(index, suffix)
-fn expand_directory_of_file_index_with_suffix<F: FnMut(&Path)->Result<()>>(index: usize, suffix: &OsString, selection: &Vec<PathBuf>, config: &Config, mut f: F) -> Result<()> {
-    if let Some(volume_info) = get_volume_info(config) {
-        for volume_info in volume_info {
-            let dir = if let Some(path) = selection.get(index - 1) {
-                let path: &Path = path.as_ref();
-                path.parent()
-            } else {
-                None
-            };
-            if let Some(dir) = dir {
-                if dir.starts_with(volume_info.folder) {
-                    if let Some(mut file_index_reader) = FileIndexReader::new(&volume_info.database).ok() {
-                        while let Ok(Some((path, _))) = file_index_reader.next() {
-                            if path.starts_with(dir) {
-                                if let Some(ext) = path.extension() {
-                                    if ext == suffix {
-                                        f(path)?;
-                                    }
-                                }
-                            }
-                        };
-                    }
-                }
-            }
-        }
-    }
+// idx./path/glob -- Opens all matching files from selection
+fn expand_index_with_glob<F: FnMut(&Path)->Result<(), CliError>>(index: usize, glob: &str, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
+    let Some(path) = selection.get(index) else {
+        return Err(CliError::InvalidOpenIndex(index));
+    };
+    let Some(path) = path.to_str() else {
+        return Err(CliError::NotImplementedForNonUtf8Path(path.to_path_buf()));
+    };
+    let mut glob2 = String::from(path);
+    glob2.push_str("/");
+    glob2.push_str(glob);
+    let glob2 = normalize(glob2);
+    expand_glob(glob2.as_str(), selection, f)?;
     Ok(())
 }
 
 #[derive(PartialEq)]
-pub enum MatchRule {
+pub enum OpenRule {
+    Glob(String),
     Index(usize),
-    DirectoryOfSelection(usize),
-    DirectoryOfFileIndex(usize),
-    DirectoryOfSelectionWithSuffix(usize, OsString),
-    DirectoryOfFileIndexWithSuffix(usize, OsString),
+    IndexRange(usize, usize),
+    IndexGlob(usize, String),
 }
 
 #[derive(PartialEq)]
 pub enum ParseError {
     Invalid
+
 }
 
-impl FromStr for MatchRule {
+impl FromStr for OpenRule {
     type Err = ParseError;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        let mut index = 0;
-        let mut dots = 0;
-        let mut suffix = String::new();
-        #[derive(Clone, Copy)]
-        enum State {
-            Start,
-            Index,
-            Dots,
-            Suffix,
-        }
-        let mut state = State::Start;
-        for ch in s.chars() {
-            match (ch, state) {
-                ('0', State::Start | State::Index) => {index = index * 10 + 0; state = State::Index;},
-                ('1', State::Start | State::Index) => {index = index * 10 + 1; state = State::Index;},
-                ('2', State::Start | State::Index) => {index = index * 10 + 2; state = State::Index;},
-                ('3', State::Start | State::Index) => {index = index * 10 + 3; state = State::Index;},
-                ('4', State::Start | State::Index) => {index = index * 10 + 4; state = State::Index;},
-                ('5', State::Start | State::Index) => {index = index * 10 + 5; state = State::Index;},
-                ('6', State::Start | State::Index) => {index = index * 10 + 6; state = State::Index;},
-                ('7', State::Start | State::Index) => {index = index * 10 + 7; state = State::Index;},
-                ('8', State::Start | State::Index) => {index = index * 10 + 8; state = State::Index;},
-                ('9', State::Start | State::Index) => {index = index * 10 + 9; state = State::Index;},
-                ('.', State::Index) => {state = State::Dots; dots = 1;},
-                (_  , State::Start | State::Index) => {return Err(ParseError::Invalid);},
-                ('.', State::Dots) if dots < 3 => {state = State::Dots; dots = dots+1;}
-                ('.', _) => {return Err(ParseError::Invalid);},
-                (ch, State::Dots) => {suffix.push(ch); state = State::Suffix;},
-                (ch, State::Suffix) => {suffix.push(ch);},
-            }
-        }
-        if index == 0 {
-            return Err(ParseError::Invalid);
-        }
-        let match_rule = match (state, dots) {
-            (State::Start | State::Index, _) => {return Err(ParseError::Invalid);},
-            (State::Dots                , 1) => MatchRule::Index(index),
-            (State::Dots                , 2) => MatchRule::DirectoryOfSelection(index),
-            (State::Dots                , 3) => MatchRule::DirectoryOfFileIndex(index),
-            (State::Suffix              , 2) => MatchRule::DirectoryOfSelectionWithSuffix(index, OsString::from(suffix)),
-            (State::Suffix              , 3) => MatchRule::DirectoryOfFileIndexWithSuffix(index, OsString::from(suffix)),
-            (_                          , _) => {return Err(ParseError::Invalid);},
-        };
-        Ok(match_rule)
+        use nom::Finish;
+        let (_rest, open_rule) = parse_open_rule(s)
+            .finish()
+            .map_err(|_err| ParseError::Invalid)?;
+        Ok(open_rule)
     }
 }
 
-impl Debug for MatchRule {
+impl Debug for OpenRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Index(arg0) => f.debug_tuple("Index").field(arg0).finish(),
-            Self::DirectoryOfSelection(arg0) => f.debug_tuple("DirectoryOfSelection").field(arg0).finish(),
-            Self::DirectoryOfFileIndex(arg0) => f.debug_tuple("DirectoryOfFileIndex").field(arg0).finish(),
-            Self::DirectoryOfSelectionWithSuffix(arg0, arg1) => f.debug_tuple("DirectoryOfSelectionWithSuffix").field(arg0).field(arg1).finish(),
-            Self::DirectoryOfFileIndexWithSuffix(arg0, arg1) => f.debug_tuple("DirectoryOfFileIndexWithSuffix").field(arg0).field(arg1).finish(),
+            Self::Index(index) => f.debug_tuple("Index").field(index).finish(),
+            Self::IndexRange(start, end) => f.debug_tuple("IndexRange").field(start).field(end).finish(),
+            Self::Glob(glob) => f.debug_tuple("Glob").field(glob).finish(),
+            Self::IndexGlob(index, glob) => f.debug_tuple("IndexWithGlob").field(index).field(glob).finish(),
         }
     }
 }
@@ -220,48 +135,92 @@ impl Debug for ParseError {
     }
 }
 
+fn parse_open_rule(input: &str) -> IResult<&str, OpenRule> {
+    use nom::branch::alt;
+    use nom::bytes::complete::tag;
+    use nom::character::complete::u64;
+    use nom::combinator::{all_consuming, map, rest};
+    use nom::sequence::tuple;
+    all_consuming(alt((
+        map(
+            tuple((
+                u64::<&str, _>,
+                tag("./"),
+                rest
+            ))
+            ,|(idx, _, glob)| OpenRule::IndexGlob(idx as usize, glob.to_string())
+        ),
+        map(
+            tuple((
+                u64,
+                tag(".-"),
+                u64,
+                tag(".")
+            ))
+            ,|(start, _, end, _)| OpenRule::IndexRange(start as usize, end as usize)
+        ),
+        map(
+            tuple((
+                u64,
+                tag(".")
+            ))
+            ,|(idx, _)| OpenRule::Index(idx as usize)
+        ),
+        map(
+            rest::<&str, _>
+            ,|glob| OpenRule::Glob(glob.to_string())
+        )
+    )))(input)
+}
+
+fn normalize(mut glob: String) -> String {
+    loop {
+        if let Some(pos2) = glob.find("/../") {
+            if let Some(pos1) = glob[0..pos2].rfind("/") {
+                glob.replace_range(pos1+1..pos2+4, "");
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    };
+    glob
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn no_dots() {
-        assert_eq!("123".parse::<MatchRule>(), Err(ParseError::Invalid));
+    fn glob() {
+        assert_eq!("*.jpg".parse(), Ok(OpenRule::Glob("*.jpg".to_string())))
     }
 
     #[test]
-    fn single_index() {
-        assert_eq!("123.".parse(), Ok(MatchRule::Index(123)));
+    fn index() {
+        assert_eq!("123.".parse(), Ok(OpenRule::Index(123)));
     }
 
     #[test]
-    fn non_zero_index() {
-        assert_eq!("0.".parse::<MatchRule>(), Err(ParseError::Invalid));
+    fn index_range() {
+        assert_eq!("123.-456.".parse(), Ok(OpenRule::IndexRange(123, 456)));
     }
 
     #[test]
-    fn directory_of_selection() {
-        assert_eq!("123..".parse(), Ok(MatchRule::DirectoryOfSelection(123)));
+    fn invalid_index() {
+        assert_eq!("123".parse::<OpenRule>(), Ok(OpenRule::Glob("123".to_string())));
     }
 
     #[test]
-    fn directory_of_file_index() {
-        assert_eq!("123...".parse(), Ok(MatchRule::DirectoryOfFileIndex(123)));
+    fn index_and_glob() {
+        assert_eq!("423./../*.flac".parse::<OpenRule>(), Ok(OpenRule::IndexGlob(423, "../*.flac".to_string())));
     }
 
     #[test]
-    fn too_many_dots() {
-        assert_eq!("123....".parse::<MatchRule>(), Err(ParseError::Invalid));
+    fn test_normalize() {
+        let path = String::from("/abc/../foo/bar/baz/../../*.jpg");
+        let path = normalize(path);
+        assert_eq!(path.as_str(), "/foo/*.jpg");
     }
-
-    #[test]
-    fn directory_of_selection_with_suffix() {
-        assert_eq!("123..jpg".parse(), Ok(MatchRule::DirectoryOfSelectionWithSuffix(123, OsString::from("jpg"))));
-    }
-
-    #[test]
-    fn directory_of_file_index_with_suffix() {
-        assert_eq!("123...jpg".parse(), Ok(MatchRule::DirectoryOfFileIndexWithSuffix(123, OsString::from("jpg"))));
-    }
-
 }

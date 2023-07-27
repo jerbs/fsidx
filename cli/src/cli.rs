@@ -31,10 +31,13 @@ pub(crate) enum CliError {
     InvalidLocateFilterOption(String),
     InvalidShellArgument(String),
     InvalidUpdateArgument(String),
-    InvalidMatchRule(String),
+    InvalidOpenRule(String),
     MissingEscapedCharacter,
     MissingClosingQuote,
     InvalidEscape(char),
+    GlobPatternError(String, globset::Error),
+    InvalidOpenIndex(usize),
+    NotImplementedForNonUtf8Path(PathBuf),
 }
 
 impl From<Error> for CliError {

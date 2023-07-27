@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use crate::cli::CliError;
 use crate::config::Config;
-use crate::expand::{Expand, MatchRule};
+use crate::expand::{Expand, OpenRule};
 use crate::help::{help_shell, help_shell_short};
 use crate::locate::locate_shell;
 use crate::tokenizer::{Token, tokenize_shell};
@@ -95,11 +95,11 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
 fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<Option<Vec<PathBuf>>, CliError>{
     let token = tokenize_shell(line)?;
     if let Some(Token::Text(command)) = token.first() {
-        // Backslah commands:
+        // Backslash commands:
         if &command[0..1] == "\\" {
             match command.as_str() {
                 "\\q" if token.len() == 1 => { process::exit(0); },
-                "\\o" => { open_backslash_command(&token[1..], selection)?; },
+                "\\o" => { open_command(config, &token[1..], selection)?; },
                 "\\u" if token.len() == 1 => { update_shell(config)?; },
                 "\\h" => { let _ = help_shell(); },
                 _ => { let _ = help_shell_short(); },
@@ -107,8 +107,13 @@ fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, s
             return Ok(None);
         }
         // Open commands:
-        if let Ok(_) = command.parse::<MatchRule>() {
-            open_index_command(config, &token, selection)?;
+        if match command.parse::<OpenRule>() {
+            Ok(OpenRule::Index(_)) => true,
+            Ok(OpenRule::IndexRange(_, _)) => true,
+            Ok(OpenRule::IndexGlob(_, _)) => true,
+            _ => false,
+        } {
+            open_command(config, &token, selection)?;
             return Ok(None);
         }
     }
@@ -120,63 +125,21 @@ fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, s
     ).map(|v| Some(v))
 }
 
-fn open_backslash_command(token: &[Token], selection: &Option<Vec<PathBuf>>) -> IOResult<()> {
+fn open_command(_config: &Config, token: &[Token], selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found = false;
         for token in token {
             match token {
                 crate::tokenizer::Token::Text(text) => {
-                    if let Ok(index) = text.parse::<usize>() {
-                        if index > 0 {
-                            let index = index - 1;
-                            if let Some(path) = selection.get(index) {
-                                let path = Path::new(path);
-                                open_append(&mut command, path, &mut found)?;
-                            } else {
-                                print_error();
-                                eprintln!("Invalid index '{}'.", index);
-                            }
-                        } else {
-                            print_error();
-                            println!("Invalid index '{}'.", index);
-                        }
-                    } else {
-                        print_error();
-                        eprintln!("Invalid index '{}'.", text);
-                    }
-                },
-                crate::tokenizer::Token::Option(text) => {
-                    print_error();
-                    eprintln!("Invalid option '-{}'.", text);
-                },
-            }
-        }
-        if found {
-            open_spawn(&mut command)?;
-        }
-    } else {
-        print_error();
-        eprintln!("Run a query first.");
-    }
-    Ok(())
-}
-
-fn open_index_command(config: &Config, token_it: &[Token], selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {
-    if let Some(selection) = selection {
-        let mut command = Command::new("open");
-        let mut found = false;
-        for token in token_it {
-            match token {
-                crate::tokenizer::Token::Text(text) => {
-                    if let Ok(match_rule) = text.parse::<MatchRule>() {
-                        let expand = Expand::new(config, match_rule, selection);
+                    if let Ok(open_rule) = text.parse::<OpenRule>() {
+                        let expand = Expand::new(open_rule, selection);
                         expand.foreach(|path| open_append(&mut command, path, &mut found))?;
                     } else {
-                        return Err(CliError::InvalidMatchRule(text.clone()));
+                        return Err(CliError::InvalidOpenRule(text.clone()));
                     }
                 },
-                crate::tokenizer::Token::Option(_) => {},
+                crate::tokenizer::Token::Option(_) => {},   // TODO: Implement options to configure glob expansion.
             };
         }
         if found {
@@ -189,7 +152,7 @@ fn open_index_command(config: &Config, token_it: &[Token], selection: &Option<Ve
     Ok(())
 }
 
-fn open_append(command: &mut Command, path: &Path, found: &mut bool) -> IOResult<()> {
+fn open_append(command: &mut Command, path: &Path, found: &mut bool) -> Result<(), CliError> {
     if path.exists() {
         command.arg(path);
         *found = true;
