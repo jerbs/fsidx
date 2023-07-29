@@ -6,7 +6,7 @@ mod update;
 
 pub use filter::{apply, compile, FilterToken};
 pub use config::VolumeInfo;
-pub use config::Settings;
+pub use config::{LocateConfig, Settings, Case, Mode, Order, What};
 pub use locate::{locate, LocateEvent, LocateError, Metadata, FileIndexReader};
 // pub use locate_mt::locate_mt;
 pub use update::{update, UpdateSink};

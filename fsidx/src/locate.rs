@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use crate::{Settings, VolumeInfo, FilterToken, filter};
+use crate::config::LocateConfig;
 
 pub enum LocateEvent<'a> {
     Entry(&'a Path, &'a Metadata),
@@ -35,10 +36,10 @@ pub struct Metadata {
     pub size: Option<u64>,
 }
 
-pub fn locate<F: FnMut(LocateEvent)->IOResult<()>>(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, mut f: F) -> Result<(), LocateError> {
+pub fn locate<F: FnMut(LocateEvent)->IOResult<()>>(volume_info: Vec<VolumeInfo>, filter: Vec<FilterToken>, config: &LocateConfig, interrupt: Option<Arc<AtomicBool>>, mut f: F) -> Result<(), LocateError> {
     for vi in &volume_info {
         f(LocateEvent::Searching(&vi.folder)).map_err(|err| LocateError::WritingResultFailed(err))?;
-        let res = locate_volume(vi, &filter, &interrupt, &mut f);
+        let res = locate_volume(vi, &filter, config, &interrupt, &mut f);
         if let Err(ref err) = res {
             match err {
                 LocateError::Interrupted => return res,
@@ -50,9 +51,9 @@ pub fn locate<F: FnMut(LocateEvent)->IOResult<()>>(volume_info: Vec<VolumeInfo>,
     Ok(())
 }
 
-pub fn locate_volume<F: FnMut(LocateEvent)->IOResult<()>>(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, interrupt: &Option<Arc<AtomicBool>>, f: &mut F) -> Result<(), LocateError> {    
+pub fn locate_volume<F: FnMut(LocateEvent)->IOResult<()>>(volume_info: &VolumeInfo, filter: &Vec<FilterToken>, config: &LocateConfig, interrupt: &Option<Arc<AtomicBool>>, f: &mut F) -> Result<(), LocateError> {    
     let mut reader = FileIndexReader::new(&volume_info.database)?;
-    let filter = filter::compile(&filter)?;
+    let filter = filter::compile(&filter, config)?;
     loop {
         if interrupt.as_ref().map(|v| v.load(Ordering::Relaxed)).unwrap_or(false) {
             return Err(LocateError::Interrupted);
@@ -61,7 +62,7 @@ pub fn locate_volume<F: FnMut(LocateEvent)->IOResult<()>>(volume_info: &VolumeIn
             Ok(Some((path, metadata))) => {
                 let bytes = path.as_os_str().as_bytes();
                 let text = String::from_utf8_lossy(bytes);
-                if filter::apply(&text, &filter) {
+                if filter::apply(&text, &filter, config) {
                     f(LocateEvent::Entry(path, &metadata)).map_err(|err| LocateError::WritingResultFailed(err))?;
                 }
             },

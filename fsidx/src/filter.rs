@@ -1,4 +1,5 @@
 use globset::{GlobBuilder, GlobMatcher};
+use crate::config::{LocateConfig, Mode};
 use crate::locate::LocateError;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -30,20 +31,19 @@ pub enum CompiledFilterToken {
     LastElement,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Mode {
-    Auto,
-    Smart,
-    Glob,
-}
-
-pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, LocateError> {
+pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Vec<CompiledFilterToken>, LocateError> {
     let mut result = Vec::new();
-    let mut mode: Mode = Mode::Auto;
-    let mut case_sensitive = false;
-    let mut smart_spaces = true;
-    let mut same_order = false;
-    let mut literal_separator = false;
+    let mut mode: Mode = config.mode;
+    let mut smart_spaces = config.smart_spaces;
+    let mut literal_separator = config.literal_separator;
+    let mut case_sensitive = match config.case {
+        crate::Case::MatchCase => true,
+        crate::Case::IgnoreCase => false,
+    };
+    let mut same_order = match config.order {
+        crate::Order::AnyOrder => false,
+        crate::Order::SameOrder => true,
+    };
     for token in filter {
         match token {
             FilterToken::CaseSensitive   => { case_sensitive = true; result.push(CompiledFilterToken::CaseSensitive); },
@@ -54,14 +54,14 @@ pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, Locat
                     else if text.contains("?") { Mode::Glob }
                     else if text.contains("[") { Mode::Glob }
                     else if text.contains("]") { Mode::Glob }
-                    else { Mode::Smart }
+                    else { Mode::Plain }
                 } else {
                     mode
                 };
-                if mode == Mode::Smart &&  case_sensitive &&  smart_spaces { expand_smart_spaces(text.clone(), same_order, &mut result); };
-                if mode == Mode::Smart &&  case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.clone())); };
-                if mode == Mode::Smart && !case_sensitive &&  smart_spaces { expand_smart_spaces(text.to_lowercase(), same_order, &mut result); };
-                if mode == Mode::Smart && !case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.to_lowercase())); };
+                if mode == Mode::Plain &&  case_sensitive &&  smart_spaces { expand_smart_spaces(text.clone(), same_order, &mut result); };
+                if mode == Mode::Plain &&  case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.clone())); };
+                if mode == Mode::Plain && !case_sensitive &&  smart_spaces { expand_smart_spaces(text.to_lowercase(), same_order, &mut result); };
+                if mode == Mode::Plain && !case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.to_lowercase())); };
                 if mode == Mode::Glob {
                     let glob_matcher = GlobBuilder::new(text.as_str())
                         .case_insensitive(case_sensitive)
@@ -81,7 +81,7 @@ pub fn compile(filter: &[FilterToken]) -> Result<Vec<CompiledFilterToken>, Locat
             FilterToken::SmartSpaces(on) => { smart_spaces = *on; },
             FilterToken::LiteralSeparator(on) => { literal_separator = *on; },
             FilterToken::Auto => { mode = Mode::Auto; },
-            FilterToken::Smart => { mode = Mode::Smart; },
+            FilterToken::Smart => { mode = Mode::Plain; },
             FilterToken::Glob => { mode = Mode::Glob; },
         }
     }
@@ -115,7 +115,7 @@ struct State {
     pos: usize,
 }
 
-pub fn apply(text: &str, filter: &[CompiledFilterToken]) -> bool {
+pub fn apply(text: &str, filter: &[CompiledFilterToken], config: &LocateConfig) -> bool {
     let lower_text: String = text.to_lowercase();
     let (last_text, lower_last_text, offset) = if let Some(pos_last_slash) = text.rfind('/') {
         let last_text = &text[pos_last_slash+1..];
@@ -127,9 +127,18 @@ pub fn apply(text: &str, filter: &[CompiledFilterToken]) -> bool {
     
     let mut pos: usize = 0;   // Either whole path position or last element position depending on b_last_element.
     let mut index = 0;
-    let mut b_case_sensitive = false;
-    let mut b_same_order = false;
-    let mut b_last_element = false;
+    let mut b_case_sensitive = match config.case {
+        crate::Case::MatchCase => true,
+        crate::Case::IgnoreCase => false,
+    };
+    let mut b_same_order = match config.order {
+        crate::Order::AnyOrder => false,
+        crate::Order::SameOrder => true,
+    };
+    let mut b_last_element = match config.what {
+        crate::What::WholePath => false,
+        crate::What::LastElement => true,
+    };
     let filter_len = filter.len();
     
     let mut back_tracking = State { index: 0, pos: 0 };
@@ -216,8 +225,10 @@ mod tests {
     static DATA: [&str; 8] = [S0, S1, S2, S3, S4, S5, S6, S7];
 
     fn process(flt: &[FilterToken]) -> Vec<String> {
-        let flt = compile(flt).unwrap();
-        DATA.iter().filter(|entry: &&&str| apply(entry, &flt)).map(|x: &&str| String::from(*x)).collect()
+        let config = LocateConfig::default();
+        let flt = compile(flt, &config).unwrap();
+        let config = LocateConfig::default();
+        DATA.iter().filter(|entry: &&&str| apply(entry, &flt, &config)).map(|x: &&str| String::from(*x)).collect()
     }
 
     static EMPTY: [&str; 0] = [];
@@ -292,46 +303,51 @@ mod tests {
 
     #[test]
     fn continue_after_last_match() {
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo")]).unwrap()), true);
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo"), t("foo")]).unwrap()), false);
-        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::SameOrder, t("foo"), t("baz")]).unwrap()), true);
-        assert_eq!(apply("foo bar baz", &compile(&[t("foo baz")]).unwrap()), false);
-        assert_eq!(apply("fOO bar baZ", &compile(&[t("Foo Bar")]).unwrap()), true);
-        assert_eq!(apply("foo foo", &compile(&[t("foo foo")]).unwrap()), true);
-        assert_eq!(apply("foo bar", &compile(&[t("foo foo")]).unwrap()), false);
-        assert_eq!(apply("foo-foo", &compile(&[t("foo foo")]).unwrap()), true);
-        assert_eq!(apply("foo_foo", &compile(&[t("foo foo")]).unwrap()), true);
+        let config = LocateConfig::default();
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo"), t("foo")], &config).unwrap(), &config), false);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::SameOrder, t("foo"), t("baz")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo bar baz", &compile(&[t("foo baz")], &config).unwrap(), &config), false);
+        assert_eq!(apply("fOO bar baZ", &compile(&[t("Foo Bar")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo foo", &compile(&[t("foo foo")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo bar", &compile(&[t("foo foo")], &config).unwrap(), &config), false);
+        assert_eq!(apply("foo-foo", &compile(&[t("foo foo")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo_foo", &compile(&[t("foo foo")], &config).unwrap(), &config), true);
     }
 
     #[test]
     fn smart_space() {
-        assert_eq!(apply("foo bar abc baz", &compile(&[t("foo baz")]).unwrap()), false);
-        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar abc")]).unwrap()), true);
-        assert_eq!(apply("foo-bar-abc-baz", &compile(&[t("bar abc")]).unwrap()), true);
-        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar abc")]).unwrap()), true);
-        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar-abc")]).unwrap()), true);
-        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar_abc")]).unwrap()), true);
+        let config = LocateConfig::default();
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("foo baz")], &config).unwrap(), &config), false);
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar abc")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo-bar-abc-baz", &compile(&[t("bar abc")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar abc")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar-abc")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar_abc")], &config).unwrap(), &config), true);
     }
 
     #[test]
     fn retry_on_failure_with_next() {
-        assert_eq!(apply("foo bar baz", &compile(&[t("b-a-r")]).unwrap()), true);
-        assert_eq!(apply("foo baz bar", &compile(&[t("b-a-r")]).unwrap()), true);
-        assert_eq!(apply("foo baz bax", &compile(&[t("b-a-r")]).unwrap()), false);
+        let config = LocateConfig::default();
+        assert_eq!(apply("foo bar baz", &compile(&[t("b-a-r")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo baz bar", &compile(&[t("b-a-r")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo baz bax", &compile(&[t("b-a-r")], &config).unwrap(), &config), false);
     }
 
     #[test]
     fn back_tracking_skip_multibyte_characters() {
+        let config = LocateConfig::default();
         let text = "äaäa";   //  [61, CC, 88, 61, C3, A4, 61]
         // 0x61      : a
         // 0xCC, 0x88: Trema for previous letter (https://www.compart.com/de/unicode/U+0308)
         // 0xC3, 0xA4: ä
         // println!("{:02X?}", text.bytes());
-        assert_eq!(apply(text, &compile(&[t("a-b")]).unwrap()), false);
+        assert_eq!(apply(text, &compile(&[t("a-b")], &config).unwrap(), &config), false);
     }
 
     #[test]
     fn position_calculation_same_order() {
+        let config = LocateConfig::default();
         let text = "              a            bc";
         for a in &[CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive] {
             for b in &[CompiledFilterToken::WholePath, CompiledFilterToken::LastElement] {
@@ -342,13 +358,15 @@ mod tests {
                     CompiledFilterToken::SmartText("a".to_string()),
                     CompiledFilterToken::SmartText("b".to_string()),
                     CompiledFilterToken::SmartNext("c".to_string())
-                ]), true);
+                ], &config),
+                true);
             }
         }
     }
 
     #[test]
     fn position_calculation_any_order() {
+        let config = LocateConfig::default();
         let text = "              bc            a";
         for a in &[CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive] {
             for b in &[CompiledFilterToken::WholePath, CompiledFilterToken::LastElement] {
@@ -359,17 +377,19 @@ mod tests {
                     CompiledFilterToken::SmartText("a".to_string()),
                     CompiledFilterToken::SmartText("b".to_string()),
                     CompiledFilterToken::SmartNext("c".to_string())
-                ]), true);
+                ], &config),
+                true);
             }
         }
     }
 
     #[test]
     fn compile_text_with_spaces() {
+        let config = LocateConfig::default();
         let actual = compile( &[
             t("a b c d"),
             t("e"),
-        ] ).unwrap();
+        ], &config).unwrap();
         let expected = vec![
             CompiledFilterToken::SmartText("a".to_string()),
             CompiledFilterToken::SameOrder,
@@ -385,7 +405,8 @@ mod tests {
 
     #[test]
     fn remove_empty_strings_after_expanding_smart_spaces() {
-        let actual = compile(&[t("- a-b c- -d -")]).unwrap();
+        let config = LocateConfig::default();
+        let actual = compile(&[t("- a-b c- -d -")], &config).unwrap();
         let expected = vec![
             CompiledFilterToken::SmartText("a".to_string()),
             CompiledFilterToken::SameOrder,

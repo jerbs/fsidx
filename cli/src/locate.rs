@@ -44,7 +44,7 @@ pub(crate) fn locate_shell(config: &Config, line: &str, interrupt: Option<Arc<At
 fn locate_impl<F: FnMut(LocateEvent)->IOResult<()>>(config: &Config, filter_token: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<(), CliError> {
     let volume_info = get_volume_info(&config)
     .ok_or(CliError::NoDatabasePath)?;
-    match fsidx::locate(volume_info, filter_token, interrupt, f) {
+    match fsidx::locate(volume_info, filter_token, &config.locate, interrupt, f) {
         Ok(_) => Ok(()),
         Err(fsidx::LocateError::BrokenPipe) => Ok(()),     // No error for: fsidx | head -n 5
         Err(err) => Err(CliError::LocateError(err)),
@@ -141,12 +141,15 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateEvent) -> IOResu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fsidx::LocateConfig;
 
     fn process(text: &str, query: &str) -> bool {
         let token = tokenize_shell(query).unwrap();
         let filter = locate_filter(token).unwrap();
-        let compiled = fsidx::compile(filter.as_slice()).unwrap();
-        fsidx::apply(text, &compiled)
+        let config = LocateConfig::default();
+        let compiled = fsidx::compile(filter.as_slice(), &config).unwrap();
+        let config = LocateConfig::default();
+        fsidx::apply(text, &compiled, &config)
     }
 
     #[test]

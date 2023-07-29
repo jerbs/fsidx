@@ -15,5 +15,6 @@ natord = "1.0.9"
 nix = "0.26.2"
 num_cpus = "1.13.1"
 num_enum = "0.6.1"
+serde = { version = "1.0.133", features = ["derive"] }
 threadpool = "1.8.1"
 walkdir = "2.3.1"

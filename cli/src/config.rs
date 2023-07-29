@@ -2,14 +2,14 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
-use fsidx::VolumeInfo;
+use fsidx::{LocateConfig, VolumeInfo};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub folder: Vec<PathBuf>,
     #[serde(default)]
-    pub locate: ConfigLocate,
+    pub locate: LocateConfig,
     pub db_path: Option<PathBuf>,
 }
 
@@ -19,96 +19,6 @@ pub enum ConfigError {
     ParseError(PathBuf, toml::de::Error),
     TomlFileExpected(PathBuf),
     ConfigFileNotFound,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct ConfigLocate {
-    #[serde(default)]
-    pub case: Case,
-    #[serde(default)]
-    pub order: Order,
-    #[serde(default)]
-    pub what: What,
-    #[serde(default)]
-    pub smart_spaces: bool,
-    #[serde(default)]
-    pub word_boundaries: bool,
-    #[serde(default)]
-    pub literal_separator: bool,
-    #[serde(default)]
-    pub mode: Mode,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
-pub enum Case {
-    MatchCase,
-    IgnoreCase,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
-pub enum Order {
-    AnyOrder,
-    SameOrder,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
-pub enum What {
-    WholePath,
-    LastElement,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
-pub enum Mode {
-    Auto,
-    Plain,
-    Glob,
-}
-
-impl Default for ConfigLocate {
-    fn default() -> Self {
-        ConfigLocate {
-            case: Case::IgnoreCase,
-            order: Order::AnyOrder,
-            what: What::WholePath,
-            smart_spaces: true,
-            word_boundaries: false,
-            literal_separator: false,
-            mode: Mode::Auto,
-        }
-    }
-}
-
-impl Default for Case {
-    fn default() -> Self {
-        Case::IgnoreCase
-    }
-}
-
-impl Default for Order {
-    fn default() -> Self {
-        Order::AnyOrder
-    }
-}
-
-impl Default for What {
-    fn default() -> Self {
-        What::WholePath
-    }
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Auto
-    }
 }
 
 impl std::fmt::Display for ConfigError {
@@ -211,6 +121,7 @@ pub fn get_db_file_path(config: &Config, folder: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use indoc::indoc;
+    use fsidx::{Case, Mode, Order, What};
     
     #[test]
     fn toml_parsing() {
@@ -238,7 +149,7 @@ mod tests {
                 folder: vec![
                     PathBuf::from(format!("{}/Music", home)),
                     PathBuf::from("/Volumes/Music")],
-                locate: ConfigLocate{
+                locate: LocateConfig {
                     case: Case::IgnoreCase,
                     order: Order::AnyOrder,
                     what: What::WholePath,
@@ -255,7 +166,7 @@ mod tests {
     fn encode_toml() {
         let config = Config {
             folder: vec![PathBuf::from("~/Music"), PathBuf::from("/Volumes/Music")],
-            locate: ConfigLocate {
+            locate: LocateConfig {
                 case: Case::IgnoreCase,
                 order: Order::AnyOrder,
                 what: What::WholePath,
