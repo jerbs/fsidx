@@ -46,8 +46,6 @@ impl From<Error> for CliError {
     }
 }
 
-// FIXME: Implement more From traits to avoid map_err.
-
 impl Default for MainOptions {
     fn default() -> Self {
         Self {

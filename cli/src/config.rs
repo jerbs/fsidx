@@ -80,6 +80,12 @@ impl Default for What {
     }
 }
 
+impl From<toml::de::Error> for ConfigError {
+    fn from(err: toml::de::Error) -> Self {
+        ConfigError::ParseError(err)
+    }
+}
+
 pub fn find_and_load() -> Result<Config, ConfigError> {
     if let Ok(home) = env::var("HOME") {
         let path = Path::new(&home);
@@ -112,8 +118,7 @@ pub fn load_from_path(file_name: &Path) -> Result<Config, ConfigError> {
 }
 
 fn parse_content(contents: &str) -> Result<Config, ConfigError> {
-    let mut config: Config = toml::from_str(&contents)
-        .map_err(|err: toml::de::Error| ConfigError::ParseError(err))?;
+    let mut config: Config = toml::from_str(&contents)?;
     resolve_leading_tilde(&mut config);
     Ok( config )
 }

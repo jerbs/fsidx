@@ -99,8 +99,13 @@ pub enum OpenRule {
 
 #[derive(PartialEq)]
 pub enum ParseError {
-    Invalid
+    Invalid(String),
+}
 
+impl From<nom::error::Error<&str>> for ParseError {
+    fn from(err: nom::error::Error<&str>) -> Self {
+        ParseError::Invalid(err.to_string())
+    }
 }
 
 impl FromStr for OpenRule {
@@ -109,8 +114,7 @@ impl FromStr for OpenRule {
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         use nom::Finish;
         let (_rest, open_rule) = parse_open_rule(s)
-            .finish()
-            .map_err(|_err| ParseError::Invalid)?;
+            .finish()?;
         Ok(open_rule)
     }
 }
