@@ -125,7 +125,7 @@ fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, s
     ).map(|v| Some(v))
 }
 
-fn open_command(_config: &Config, token: &[Token], selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {
+fn open_command(config: &Config, token: &[Token], selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found = false;
@@ -134,7 +134,7 @@ fn open_command(_config: &Config, token: &[Token], selection: &Option<Vec<PathBu
                 crate::tokenizer::Token::Text(text) => {
                     if let Ok(open_rule) = text.parse::<OpenRule>() {
                         let expand = Expand::new(open_rule, selection);
-                        expand.foreach(|path| open_append(&mut command, path, &mut found))?;
+                        expand.foreach(|path| open_append(&mut command, path, &mut found, config))?;
                     } else {
                         return Err(CliError::InvalidOpenRule(text.clone()));
                     }
@@ -152,7 +152,7 @@ fn open_command(_config: &Config, token: &[Token], selection: &Option<Vec<PathBu
     Ok(())
 }
 
-fn open_append(command: &mut Command, path: &Path, found: &mut bool) -> Result<(), CliError> {
+fn open_append(command: &mut Command, path: &Path, found: &mut bool, config: &Config) -> Result<(), CliError> {
     if path.exists() {
         command.arg(path);
         *found = true;
@@ -164,7 +164,16 @@ fn open_append(command: &mut Command, path: &Path, found: &mut bool) -> Result<(
         print_error();
         stderr().write_all(b"'")?;
         stderr().write_all(path.as_os_str().as_bytes())?;
-        stderr().write_all(b"' not exists. Device not mounted.\n")?;   // FIXME: Improve error.
+        stderr().write_all(b"' not exists.")?;
+        for base in &config.folder {
+            if path.starts_with(base) {
+                if !base.exists() {
+                    stderr().write_all( b" Device not mounted.")?;
+                    break;
+                }
+            }
+        }
+        stderr().write_all(b"\n")?;
     }
     Ok(())
 }
