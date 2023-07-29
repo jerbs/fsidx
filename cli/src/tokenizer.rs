@@ -25,8 +25,9 @@ pub(crate) fn tokenize_arg(arg: &str) -> Vec<Token> {
     } else if arg.starts_with("-") {
         let mut remainder = &arg[1..];
         while !remainder.is_empty() {
-            let short_option = &remainder[0..1];
-            remainder = &remainder[1..];
+            let short_option = remainder.chars().next().unwrap();
+            let len = short_option.len_utf8();
+            remainder = &remainder[len..];
             token.push(Token::Option(short_option.to_string()));
         }
     } else {

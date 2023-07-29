@@ -118,8 +118,8 @@ struct State {
 pub fn apply(text: &str, filter: &[CompiledFilterToken], config: &LocateConfig) -> bool {
     let lower_text: String = text.to_lowercase();
     let (last_text, lower_last_text, offset) = if let Some(pos_last_slash) = text.rfind('/') {
-        let last_text = &text[pos_last_slash+1..];
-        let lower_last_text = &lower_text[pos_last_slash+1..];
+        let last_text = &text[pos_last_slash+1..];               // '/' is one byte
+        let lower_last_text = &lower_text[pos_last_slash+1..];   // '/' is one byte
         (last_text, lower_last_text, pos_last_slash+1)
     } else {
         (text, &lower_text[..], 0)
@@ -475,5 +475,16 @@ mod tests {
         assert_eq!(process(&[FilterToken::Glob, FilterToken::LastElement, t("*.txt")]), [S7]);
         assert_eq!(process(&[FilterToken::Glob, FilterToken::WholePath, t("*.txt")]), [S7]);
         assert_eq!(process(&[FilterToken::Glob, FilterToken::WholePath, FilterToken::LiteralSeparator(true), t("*.txt")]), EMPTY);
+    }
+
+    #[test]
+    fn utf8_slice() {
+        let text = "öäüÄÖÜß";
+        assert_eq!(text.len(), 14);
+        assert_eq!(text.chars().count(), 7);
+        let ch = text[0..].chars().next().unwrap();
+        let len = ch.len_utf8();
+        assert_eq!(len, 2);
+        assert_eq!(text[2..].chars().next().unwrap(), 'ä');
     }
 }

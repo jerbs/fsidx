@@ -96,7 +96,7 @@ fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, s
     let token = tokenize_shell(line)?;
     if let Some(Token::Text(command)) = token.first() {
         // Backslash commands:
-        if &command[0..1] == "\\" {
+        if command.starts_with('\\') {
             match command.as_str() {
                 "\\q" if token.len() == 1 => { process::exit(0); },
                 "\\o" => { open_command(config, &token[1..], selection)?; },
