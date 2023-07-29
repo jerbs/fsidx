@@ -69,7 +69,7 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
                     Ok(None) => {},
                     Err(CliError::LocateError(LocateError::Interrupted)) => {println!("CTRL-C");},
                     Err(CliError::LocateError(LocateError::BrokenPipe))  => {println!("EOF");},
-                    Err(err) => { print_error(); eprintln!("{:?}", err);},    // FIXME: Replace debug print
+                    Err(err) => { print_error(); eprintln!("{}", err);},
                 };
             },
             Err(ReadlineError::Interrupted) => {
@@ -189,7 +189,7 @@ fn open_spawn(command: &mut Command) -> IOResult<()> {
     Ok(())
 }
 
-fn print_error() {
+pub fn print_error() {
     let mut stderr = StandardStream::stderr(ColorChoice::Auto);
     let _ = stderr.set_color(ColorSpec::new().set_fg(Some(Color::Red)));
     let _ = stderr.write_all(b"Error");

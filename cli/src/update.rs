@@ -14,7 +14,7 @@ pub(crate) fn update_cli(config: &Config, args: &mut Args) -> Result<(), CliErro
 
 pub(crate) fn update_shell(config: &Config) -> Result<(), CliError> {
     let volume_info = get_volume_info(&config)
-    .ok_or(CliError::NoDatabaseFound)?;
+    .ok_or(CliError::NoDatabasePath)?;
     let sink = UpdateSink {
         stdout: &mut stdout(),
         stderr: &mut stderr(),

@@ -19,12 +19,12 @@ struct MainOptions {
 
 #[derive(Debug)]
 pub(crate) enum CliError {
-    MissingValue(String),
+    MissingOptionValue(String),
     InvalidOption(String),
     InvalidSubCommand(String),
     ConfigError(ConfigError),
     LocateError(fsidx::LocateError),
-    NoDatabaseFound,
+    NoDatabasePath,
     TtyConfigurationFailed(std::io::Error),
     CreatingSignalHandlerFailed(std::io::Error),
     StdoutWriteFailed(std::io::Error),
@@ -38,6 +38,40 @@ pub(crate) enum CliError {
     GlobPatternError(String, globset::Error),
     InvalidOpenIndex(usize),
     NotImplementedForNonUtf8Path(PathBuf),
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CliError::MissingOptionValue(name) => f.write_fmt(format_args!("Option '{}{}' expects a parameter.", option_prefix(name.as_str()), name)),
+            CliError::InvalidOption(name) => f.write_fmt(format_args!("Invalid option '{}{}'", option_prefix(name.as_str()), name)),
+            CliError::InvalidSubCommand(name) => f.write_fmt(format_args!("Invalid subcommand '{}'", name)),
+            CliError::ConfigError(err) => f.write_fmt(format_args!("{}", err)),
+            CliError::LocateError(err) => f.write_fmt(format_args!("{}", err)),
+            CliError::NoDatabasePath => f.write_str("Failed to determine location of database files."),
+            CliError::TtyConfigurationFailed(err) => f.write_fmt(format_args!("Configuring TTY failed: {}", err)),
+            CliError::CreatingSignalHandlerFailed(err) => f.write_fmt(format_args!("Creating signal handler failed: {}", err)),
+            CliError::StdoutWriteFailed(err) => f.write_fmt(format_args!("Writing output failed: {}", err)),
+            CliError::InvalidLocateFilterOption(name) =>f.write_fmt(format_args!("Invalid locate filter option: {}{}", option_prefix(name.as_str()), name)),
+            CliError::InvalidShellArgument(arg) => f.write_fmt(format_args!("Invalid shell argument: {}", arg)),
+            CliError::InvalidUpdateArgument(arg) => f.write_fmt(format_args!("Invalid update argument: {}", arg)),
+            CliError::InvalidOpenRule(rule) => f.write_fmt(format_args!("Invalid open rule: {}", rule)),
+            CliError::MissingEscapedCharacter => f.write_str("Escape without following character."),
+            CliError::MissingClosingQuote => f.write_str("Missing closing quote."),
+            CliError::InvalidEscape(text) => f.write_fmt(format_args!("Invalid escape: '{}'", text)),
+            CliError::GlobPatternError(glob, err) => f.write_fmt(format_args!("Glob '{}' is invalid: {}", glob, err)),
+            CliError::InvalidOpenIndex(idx) => f.write_fmt(format_args!("Invalid open index: {}", idx)),
+            CliError::NotImplementedForNonUtf8Path(path) => f.write_fmt(format_args!("Not implemented for a non-UTF8 path: {}", path.to_string_lossy())),
+        }
+    }
+}
+
+fn option_prefix(name: &str) -> &str {
+    if name.len()==1 {
+        "-"
+    } else {
+        "--"
+    }
 }
 
 impl From<Error> for CliError {
@@ -59,7 +93,8 @@ impl Default for MainOptions {
 
 pub fn main() -> i32 {
     if let Err(err) = process_main_command() {
-        eprintln!("{:?}", err);
+        crate::shell::print_error();
+        eprintln!("{}", err);
         process::exit(1);
     }
     0
@@ -128,7 +163,7 @@ impl MainOptions {
     fn parse(&mut self, option: &str, args: &mut Args) -> Result<(), CliError> {
         match option {
             "c" | "config"  => { self.config_file = Some(get_path_buf(args)
-                                        .ok_or_else(|| CliError::MissingValue(option.to_string()))?); },
+                                        .ok_or_else(|| CliError::MissingOptionValue(option.to_string()))?); },
             "h" | "help"    => { self.help = true; },
             "v" | "verbose" => { self.verbose += 1; },
             "V" | "version" => { self.version = true; },

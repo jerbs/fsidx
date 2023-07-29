@@ -40,11 +40,8 @@ impl<'a> Expand<'a> {
 fn expand_index<F: FnMut(&Path)->Result<(), CliError>>(index: usize, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
     let path = selection
     .get(index - 1)
-    .map(|v| v.as_ref());
-    if let Some(path) = path {
-        f(path)?;
-    }
-    Ok(())
+    .ok_or(CliError::InvalidOpenIndex(index))?;
+    f(path)
 }
 
 // idx.-idx.      -- Opens range of files from selection

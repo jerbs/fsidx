@@ -43,7 +43,7 @@ pub(crate) fn locate_shell(config: &Config, line: &str, interrupt: Option<Arc<At
 
 fn locate_impl<F: FnMut(LocateEvent)->IOResult<()>>(config: &Config, filter_token: Vec<FilterToken>, interrupt: Option<Arc<AtomicBool>>, f: F) -> Result<(), CliError> {
     let volume_info = get_volume_info(&config)
-    .ok_or(CliError::NoDatabaseFound)?;
+    .ok_or(CliError::NoDatabasePath)?;
     match fsidx::locate(volume_info, filter_token, interrupt, f) {
         Ok(_) => Ok(()),
         Err(fsidx::LocateError::BrokenPipe) => Ok(()),     // No error for: fsidx | head -n 5

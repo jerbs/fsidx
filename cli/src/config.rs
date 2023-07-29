@@ -16,8 +16,8 @@ pub struct Config {
 #[derive(Debug)]
 pub enum ConfigError {
     FileReadError(PathBuf, std::io::Error),
-    ParseError(toml::de::Error),
-    TomlFileExpected,
+    ParseError(PathBuf, toml::de::Error),
+    TomlFileExpected(PathBuf),
     ConfigFileNotFound,
 }
 
@@ -80,11 +80,16 @@ impl Default for What {
     }
 }
 
-impl From<toml::de::Error> for ConfigError {
-    fn from(err: toml::de::Error) -> Self {
-        ConfigError::ParseError(err)
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::FileReadError(path, err) => f.write_fmt(format_args!("Reading '{}' failed: {}", path.to_string_lossy(), err)),
+            ConfigError::ParseError(path, err) => f.write_fmt(format_args!("Parsing '{}' failed: {}", path.to_string_lossy(), err)),
+            ConfigError::TomlFileExpected(path) => f.write_fmt(format_args!("Expected a toml file instead of: '{}'", path.to_string_lossy())),
+            ConfigError::ConfigFileNotFound => f.write_str("Configuration file not found."),
+        }
     }
-}
+} 
 
 pub fn find_and_load() -> Result<Config, ConfigError> {
     if let Ok(home) = env::var("HOME") {
@@ -104,20 +109,21 @@ pub fn find_and_load() -> Result<Config, ConfigError> {
 pub fn load_from_path(file_name: &Path) -> Result<Config, ConfigError> {
     if file_name
         .extension()
-        .ok_or(ConfigError::TomlFileExpected)?
+        .ok_or(ConfigError::TomlFileExpected(file_name.to_owned(),))?
         .to_str()
-        .ok_or(ConfigError::TomlFileExpected)? != "toml"
+        .ok_or(ConfigError::TomlFileExpected(file_name.to_owned(),))? != "toml"
     {
-        return Err(ConfigError::TomlFileExpected);
+        return Err(ConfigError::TomlFileExpected(file_name.to_owned(),));
     };
     let contents = fs::read_to_string(file_name)
         .map_err(|err: std::io::Error| ConfigError::FileReadError(file_name.to_owned(), err))?;
-    let mut config = parse_content(&contents)?;
+    let mut config = parse_content(&contents)
+        .map_err(|err| ConfigError::ParseError(file_name.to_owned(), err))?;
     set_db_path(&mut config, file_name);
     Ok( config )
 }
 
-fn parse_content(contents: &str) -> Result<Config, ConfigError> {
+fn parse_content(contents: &str) -> Result<Config, toml::de::Error> {
     let mut config: Config = toml::from_str(&contents)?;
     resolve_leading_tilde(&mut config);
     Ok( config )
