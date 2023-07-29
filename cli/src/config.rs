@@ -30,6 +30,14 @@ pub struct ConfigLocate {
     pub order: Order,
     #[serde(default)]
     pub what: What,
+    #[serde(default)]
+    pub smart_spaces: bool,
+    #[serde(default)]
+    pub word_boundaries: bool,
+    #[serde(default)]
+    pub literal_separator: bool,
+    #[serde(default)]
+    pub mode: Mode,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -56,9 +64,26 @@ pub enum What {
     LastElement,
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub enum Mode {
+    Auto,
+    Plain,
+    Glob,
+}
+
 impl Default for ConfigLocate {
     fn default() -> Self {
-        ConfigLocate { case: Case::IgnoreCase, order: Order::AnyOrder, what: What::WholePath }
+        ConfigLocate {
+            case: Case::IgnoreCase,
+            order: Order::AnyOrder,
+            what: What::WholePath,
+            smart_spaces: true,
+            word_boundaries: false,
+            literal_separator: false,
+            mode: Mode::Auto,
+        }
     }
 }
 
@@ -77,6 +102,12 @@ impl Default for Order {
 impl Default for What {
     fn default() -> Self {
         What::WholePath
+    }
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Mode::Auto
     }
 }
 
@@ -195,6 +226,10 @@ mod tests {
             case = "ignore_case"
             order = "any_order"
             what = "whole_path"
+            smart_spaces = true
+            word_boundaries = false
+            literal_separator = false
+            mode = "auto"
             "#};
         let config: Config = parse_content(data).unwrap();
         assert_eq!(
@@ -206,7 +241,12 @@ mod tests {
                 locate: ConfigLocate{
                     case: Case::IgnoreCase,
                     order: Order::AnyOrder,
-                    what: What::WholePath,},
+                    what: What::WholePath,
+                    smart_spaces: true,
+                    word_boundaries: false,
+                    literal_separator: false,
+                    mode: Mode::Auto,
+                },
                 db_path: None,
                 });
     }
@@ -219,6 +259,10 @@ mod tests {
                 case: Case::IgnoreCase,
                 order: Order::AnyOrder,
                 what: What::WholePath,
+                smart_spaces: true,
+                word_boundaries: false,
+                literal_separator: false,
+                mode: Mode::Auto,
             },
             db_path: None
         };
@@ -230,6 +274,10 @@ mod tests {
             case = "ignore_case"
             order = "any_order"
             what = "whole_path"
+            smart_spaces = true
+            word_boundaries = false
+            literal_separator = false
+            mode = "auto"
             "#};
         assert_eq!(
             toml,
