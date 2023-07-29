@@ -76,6 +76,7 @@ pub(crate) fn tokenize_shell(line: &str) -> Result<Vec<Token>, CliError> {
                     if long_option {
                         long_option = false;
                         if item.is_empty() {
+                            // -- is not an option.
                             token.push(Token::Text(String::from("--")));
                         } else {
                             token.push(Token::Option(swap(&mut item)));
@@ -83,10 +84,13 @@ pub(crate) fn tokenize_shell(line: &str) -> Result<Vec<Token>, CliError> {
                     } else if short_option {
                         short_option = false;
                         if item.is_empty() {
+                            // - is not an option
                             token.push(Token::Text(String::from("-")));
                         } else {
                             token.push(Token::Option(swap(&mut item)));
                         }
+                    } else if item.is_empty() {
+                        // Repeated white space
                     } else {
                         token.push(Token::Text(swap(&mut item)));
                     };
@@ -326,6 +330,50 @@ mod tests {
             tokenize_shell(r#"--"#).unwrap(),
             vec!(
                 Token::Text("--".to_string()),
+            )
+        );
+    }
+
+
+    #[test]
+    fn empty() {
+        assert_eq!(
+            tokenize_shell(r#""#).unwrap(),
+            vec!()
+        );
+    }
+
+    #[test]
+    fn trailing_space() {
+        assert_eq!(
+            tokenize_shell(r#"foo "#).unwrap(),
+            vec!(
+                Token::Text("foo".to_string()),
+            )
+        );
+    }
+
+    #[test]
+    fn leading_space() {
+        let xxx = tokenize_shell(r#" foo"#).unwrap();
+        println!("{:?}", xxx);
+        assert_eq!(
+            tokenize_shell(r#" foo"#).unwrap(),
+            vec!(
+                Token::Text("foo".to_string()),
+            )
+        );
+    }
+
+    #[test]
+    fn double_space() {
+        let xxx = tokenize_shell(r#" foo"#).unwrap();
+        println!("{:?}", xxx);
+        assert_eq!(
+            tokenize_shell(r#"foo  bar"#).unwrap(),
+            vec!(
+                Token::Text("foo".to_string()),
+                Token::Text("bar".to_string()),
             )
         );
     }
