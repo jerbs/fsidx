@@ -59,7 +59,7 @@ fn expand_index_range<F: FnMut(&Path)->Result<(), CliError>>(start: usize, end: 
 fn expand_glob<F: FnMut(&Path)->Result<(), CliError>>(glob: &str, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
     let glob_set = GlobBuilder::new(glob)
         .case_insensitive(true)   // FIXME: Make this configurable.
-        .literal_separator(true)   // FIXME: Make this configurable.
+        .literal_separator(false) // FIXME: Make this configurable.
         .backslash_escape(true)
         .empty_alternates(true)
         .build()
