@@ -6,12 +6,12 @@ use crate::locate::LocateError;
 pub enum FilterToken {
     Text(String),
     CaseSensitive,
-    CaseInSensitive,    // default
-    AnyOrder,           // default
+    CaseInSensitive,         // default
+    AnyOrder,                // default
     SameOrder,
-    WholePath,          // default
+    WholePath,               // default
     LastElement,
-    SmartSpaces(bool),  // default: on
+    SmartSpaces(bool),       // default: on
     LiteralSeparator(bool),  // default: off
     Auto,
     Smart,
@@ -19,7 +19,12 @@ pub enum FilterToken {
 }
 
 #[derive(Clone, Debug)]
-pub enum CompiledFilterToken {
+pub struct CompiledFilter {
+    token: Vec<CompiledFilterToken>,
+}
+
+#[derive(Clone, Debug)]
+enum CompiledFilterToken {
     Glob(GlobMatcher),
     SmartText(String),
     SmartNext(String),
@@ -31,7 +36,7 @@ pub enum CompiledFilterToken {
     LastElement,
 }
 
-pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Vec<CompiledFilterToken>, LocateError> {
+pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<CompiledFilter, LocateError> {
     let mut result = Vec::new();
     let mut mode: Mode = config.mode;
     let mut smart_spaces = config.smart_spaces;
@@ -85,7 +90,7 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Vec<Comp
             FilterToken::Glob => { mode = Mode::Glob; },
         }
     }
-    Ok(result)
+    Ok(CompiledFilter { token: result })
 }
 
 fn expand_smart_spaces(text: String, mut b_same_order: bool, filter: &mut Vec<CompiledFilterToken>) {
@@ -115,7 +120,7 @@ struct State {
     pos: usize,
 }
 
-pub fn apply(text: &str, filter: &[CompiledFilterToken], config: &LocateConfig) -> bool {
+pub fn apply(text: &str, filter: &CompiledFilter, config: &LocateConfig) -> bool {
     let lower_text: String = text.to_lowercase();
     let (last_text, lower_last_text, offset) = if let Some(pos_last_slash) = text.rfind('/') {
         let last_text = &text[pos_last_slash+1..];               // '/' is one byte
@@ -139,11 +144,11 @@ pub fn apply(text: &str, filter: &[CompiledFilterToken], config: &LocateConfig) 
         crate::What::WholePath => false,
         crate::What::LastElement => true,
     };
-    let filter_len = filter.len();
+    let filter_len = filter.token.len();
     
     let mut back_tracking = State { index: 0, pos: 0 };
     while index < filter_len {
-        let token = &filter[index];
+        let token = &filter.token[index];
         if let CompiledFilterToken::SmartText(_) = token {
             back_tracking = State { index, pos };
         }
@@ -429,14 +434,14 @@ mod tests {
         let text = "              a            bc";
         for a in &[CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive] {
             for b in &[CompiledFilterToken::WholePath, CompiledFilterToken::LastElement] {
-                assert_eq!(apply(text, &[
+                assert_eq!(apply(text, &CompiledFilter { token: vec![
                     a.clone(),
                     b.clone(),
                     CompiledFilterToken::SameOrder,
                     CompiledFilterToken::SmartText("a".to_string()),
                     CompiledFilterToken::SmartText("b".to_string()),
                     CompiledFilterToken::SmartNext("c".to_string())
-                ], &config),
+                ] }, &config),
                 true);
             }
         }
@@ -448,14 +453,14 @@ mod tests {
         let text = "              bc            a";
         for a in &[CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive] {
             for b in &[CompiledFilterToken::WholePath, CompiledFilterToken::LastElement] {
-                assert_eq!(apply(text, &[
+                assert_eq!(apply(text, &CompiledFilter { token: vec![
                     a.clone(),
                     b.clone(),
                     CompiledFilterToken::AnyOrder,
                     CompiledFilterToken::SmartText("a".to_string()),
                     CompiledFilterToken::SmartText("b".to_string()),
                     CompiledFilterToken::SmartNext("c".to_string())
-                ], &config),
+                ] }, &config),
                 true);
             }
         }
@@ -468,7 +473,7 @@ mod tests {
             t("a b c d"),
             t("e"),
         ], &config).unwrap();
-        let expected = vec![
+        let expected = CompiledFilter { token: vec![
             CompiledFilterToken::SmartText("a".to_string()),
             CompiledFilterToken::SameOrder,
             CompiledFilterToken::SmartNext("b".to_string()),
@@ -476,7 +481,7 @@ mod tests {
             CompiledFilterToken::SmartNext("d".to_string()),
             CompiledFilterToken::AnyOrder,
             CompiledFilterToken::SmartText("e".to_string()),
-        ];
+        ] };
         // Can't use assert_eq! here, since PartialEq is not implemented for GlobMatcher.
         check_compiled_filter(actual, expected);
     }
@@ -485,20 +490,20 @@ mod tests {
     fn remove_empty_strings_after_expanding_smart_spaces() {
         let config = LocateConfig::default();
         let actual = compile(&[t("- a-b c- -d -")], &config).unwrap();
-        let expected = vec![
+        let expected = CompiledFilter { token: vec![
             CompiledFilterToken::SmartText("a".to_string()),
             CompiledFilterToken::SameOrder,
             CompiledFilterToken::SmartNext("b".to_string()),
             CompiledFilterToken::SmartNext("c".to_string()),
             CompiledFilterToken::SmartNext("d".to_string()),
             CompiledFilterToken::AnyOrder,
-        ];
+        ] };
         check_compiled_filter(actual, expected);
     }
 
-    fn check_compiled_filter(actual: Vec<CompiledFilterToken>, expected: Vec<CompiledFilterToken>) {
-        assert_eq!(actual.len(), expected.len());
-        for (idx, (a,b)) in expected.iter().zip(actual.iter()).enumerate() {
+    fn check_compiled_filter(actual: CompiledFilter, expected: CompiledFilter) {
+        assert_eq!(actual.token.len(), expected.token.len());
+        for (idx, (a,b)) in expected.token.iter().zip(actual.token.iter()).enumerate() {
             let ok = match (a, b) {
                 (CompiledFilterToken::Glob(a), CompiledFilterToken::Glob(b)) => a.glob() == b.glob(),
                 (CompiledFilterToken::SmartText(a), CompiledFilterToken::SmartText(b)) => a == b,
