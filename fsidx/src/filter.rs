@@ -21,6 +21,8 @@ pub enum FilterToken {
 #[derive(Clone, Debug)]
 pub struct CompiledFilter {
     token: Vec<CompiledFilterToken>,
+    requires_lower_case: bool,
+    requires_last_element: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -37,7 +39,11 @@ enum CompiledFilterToken {
 }
 
 pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<CompiledFilter, LocateError> {
-    let mut result = Vec::new();
+    let mut compiled = CompiledFilter {
+        token: Vec::new(),
+        requires_lower_case: false,
+        requires_last_element: false,
+    };
     let mut mode: Mode = config.mode;
     let mut smart_spaces = config.smart_spaces;
     let mut literal_separator = config.literal_separator;
@@ -49,10 +55,14 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
         crate::Order::AnyOrder => false,
         crate::Order::SameOrder => true,
     };
+    let mut last_element = match config.what {
+        crate::What::WholePath => false,
+        crate::What::LastElement => true,
+    };
     for token in filter {
         match token {
-            FilterToken::CaseSensitive   => { case_sensitive = true; result.push(CompiledFilterToken::CaseSensitive); },
-            FilterToken::CaseInSensitive => { case_sensitive = false; result.push(CompiledFilterToken::CaseInSensitive); },
+            FilterToken::CaseSensitive   => { case_sensitive = true; compiled.token.push(CompiledFilterToken::CaseSensitive); },
+            FilterToken::CaseInSensitive => { case_sensitive = false; compiled.token.push(CompiledFilterToken::CaseInSensitive); },
             FilterToken::Text(text) => {
                 let mode = if mode == Mode::Auto {
                     if text.contains("*") { Mode::Glob }
@@ -63,11 +73,23 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
                 } else {
                     mode
                 };
-                if mode == Mode::Plain &&  case_sensitive &&  smart_spaces { expand_smart_spaces(text.clone(), same_order, &mut result); };
-                if mode == Mode::Plain &&  case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.clone())); };
-                if mode == Mode::Plain && !case_sensitive &&  smart_spaces { expand_smart_spaces(text.to_lowercase(), same_order, &mut result); };
-                if mode == Mode::Plain && !case_sensitive && !smart_spaces { result.push(CompiledFilterToken::SmartText(text.to_lowercase())); };
-                if mode == Mode::Glob {
+                if mode == Mode::Plain {
+                    if  case_sensitive {
+                        if smart_spaces {
+                            expand_smart_spaces(text.clone(), same_order, &mut compiled);
+                        } else {
+                            compiled.token.push(CompiledFilterToken::SmartText(text.clone()));
+                        }
+                    } else {
+                        compiled.requires_lower_case = true;
+                        if smart_spaces {
+                            expand_smart_spaces(text.to_lowercase(), same_order, &mut compiled);
+                        } else {
+                            compiled.token.push(CompiledFilterToken::SmartText(text.to_lowercase()));
+                        }
+                    }
+                }  
+                else if mode == Mode::Glob {
                     let glob_matcher = GlobBuilder::new(text.as_str())
                         .case_insensitive(case_sensitive)
                         .literal_separator(literal_separator)
@@ -76,13 +98,16 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
                         .build()
                         .map_err(|err| LocateError::GlobPatternError(text.clone(), err))?
                         .compile_matcher();
-                    result.push(CompiledFilterToken::Glob(glob_matcher));
+                    compiled.token.push(CompiledFilterToken::Glob(glob_matcher));
                 };
+                if last_element {
+                    compiled.requires_last_element = true;
+                }
             },
-            FilterToken::AnyOrder => { same_order = false; result.push(CompiledFilterToken::AnyOrder); }
-            FilterToken::SameOrder => { same_order = true; result.push(CompiledFilterToken::SameOrder); }
-            FilterToken::WholePath => { result.push(CompiledFilterToken::WholePath); },
-            FilterToken::LastElement => { result.push(CompiledFilterToken::LastElement); },
+            FilterToken::AnyOrder => { same_order = false; compiled.token.push(CompiledFilterToken::AnyOrder); }
+            FilterToken::SameOrder => { same_order = true; compiled.token.push(CompiledFilterToken::SameOrder); }
+            FilterToken::WholePath => { last_element = false; compiled.token.push(CompiledFilterToken::WholePath); },
+            FilterToken::LastElement => { last_element = true; compiled.token.push(CompiledFilterToken::LastElement); },
             FilterToken::SmartSpaces(on) => { smart_spaces = *on; },
             FilterToken::LiteralSeparator(on) => { literal_separator = *on; },
             FilterToken::Auto => { mode = Mode::Auto; },
@@ -90,28 +115,28 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
             FilterToken::Glob => { mode = Mode::Glob; },
         }
     }
-    Ok(CompiledFilter { token: result })
+    Ok(compiled)
 }
 
-fn expand_smart_spaces(text: String, mut b_same_order: bool, filter: &mut Vec<CompiledFilterToken>) {
+fn expand_smart_spaces(text: String, mut b_same_order: bool, compiled: &mut CompiledFilter) {
     let mut first = true;
     let b_stored_same_order = b_same_order;
     for part in text.split(&[' ', '-', '_']) {
         if !part.is_empty() {
             if !first && !b_same_order {
                 b_same_order = true;
-                filter.push(CompiledFilterToken::SameOrder);
+                compiled.token.push(CompiledFilterToken::SameOrder);
             }
             if first {
-                filter.push(CompiledFilterToken::SmartText(part.to_string()));
+                compiled.token.push(CompiledFilterToken::SmartText(part.to_string()));
                 first = false;
             } else {
-                filter.push(CompiledFilterToken::SmartNext(part.to_string()));
+                compiled.token.push(CompiledFilterToken::SmartNext(part.to_string()));
             }    
         }
     }
     if !b_stored_same_order && b_same_order {
-        filter.push(CompiledFilterToken::AnyOrder);
+        compiled.token.push(CompiledFilterToken::AnyOrder);
     }
 }
 
