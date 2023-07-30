@@ -148,34 +148,112 @@ pub fn apply(text: &str, filter: &[CompiledFilterToken], config: &LocateConfig) 
             back_tracking = State { index, pos };
         }
         index = index + 1;
-        if ! match token {
-            CompiledFilterToken::SmartText(pattern) if  b_case_sensitive &&  b_same_order &&  b_last_element => if let Some(npos) = last_text[pos..].find(pattern)       {pos = pos + npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartText(pattern) if !b_case_sensitive &&  b_same_order &&  b_last_element => if let Some(npos) = lower_last_text[pos..].find(pattern) {pos = pos + npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartText(pattern) if  b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = last_text.find(pattern)              {pos =       npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartText(pattern) if !b_case_sensitive && !b_same_order &&  b_last_element => if let Some(npos) = lower_last_text.find(pattern)        {pos =       npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartText(pattern) if  b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = text[pos..].find(pattern)            {pos = pos + npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartText(pattern) if !b_case_sensitive &&  b_same_order && !b_last_element => if let Some(npos) = lower_text[pos..].find(pattern)      {pos = pos + npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartText(pattern) if  b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = text.find(pattern)                   {pos =       npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartText(pattern) if !b_case_sensitive && !b_same_order && !b_last_element => if let Some(npos) = lower_text.find(pattern)             {pos =       npos + pattern.len(); true} else {false},
-            CompiledFilterToken::SmartNext(pattern) if  b_case_sensitive => {State {index, pos } = apply_next(State {index, pos}, pattern, &text, &back_tracking); true},
-            CompiledFilterToken::SmartNext(pattern) if !b_case_sensitive => {State {index, pos } = apply_next(State {index, pos}, pattern, &lower_text, &back_tracking); true},
-            CompiledFilterToken::SmartText(_) => false,
-            CompiledFilterToken::SmartNext(_) => false,
-            CompiledFilterToken::CaseSensitive => {b_case_sensitive = true; true},
-            CompiledFilterToken::CaseInSensitive => {b_case_sensitive = false; true},
-            CompiledFilterToken::AnyOrder => {b_same_order = false; true},
-            CompiledFilterToken::SameOrder => {b_same_order = true; true},
-            CompiledFilterToken::WholePath   if  b_last_element => {b_last_element = false; pos = pos + offset; true},
-            CompiledFilterToken::WholePath   if !b_last_element => {true},
-            CompiledFilterToken::LastElement if  b_last_element => {true},
-            CompiledFilterToken::LastElement if !b_last_element => {b_last_element = true; pos = if pos > offset { pos - offset } else { 0 }; true},
-            CompiledFilterToken::WholePath => false,
-            CompiledFilterToken::LastElement => false,
-            CompiledFilterToken::Glob(glob) if  b_last_element => glob.is_match(last_text),
-            CompiledFilterToken::Glob(glob) if !b_last_element => glob.is_match(text),
-            CompiledFilterToken::Glob(_) => false,
-        } {
-            return false
+        match token {
+            CompiledFilterToken::SmartText(pattern) => {
+                if b_last_element {
+                    if b_same_order {
+                        if b_case_sensitive {
+                            if let Some(npos) = last_text[pos..].find(pattern) {
+                                pos = pos + npos + pattern.len();
+                            } else {
+                                return false;
+                            }
+                        } else {
+                            if let Some(npos) = lower_last_text[pos..].find(pattern) {
+                                pos = pos + npos + pattern.len();
+                            } else {
+                                return false;
+                            }
+                        }
+                    } else {
+                        if b_case_sensitive {
+                            if let Some(npos) = last_text.find(pattern) {
+                                pos =       npos + pattern.len();
+                            } else {
+                                return false;
+                            }
+                        } else {
+                            if let Some(npos) = lower_last_text.find(pattern) {
+                                pos =       npos + pattern.len();
+                            } else {
+                                return false;
+                            }
+                        }
+                    }
+                } else {
+                    if b_same_order {
+                        if b_case_sensitive {
+                            if let Some(npos) = text[pos..].find(pattern) {
+                                pos = pos + npos + pattern.len();
+                            } else {
+                                return false;
+                            }
+                        } else {
+                            if let Some(npos) = lower_text[pos..].find(pattern) {
+                                pos = pos + npos + pattern.len();
+                            } else {
+                                return false;
+                            }
+                        }
+                    } else {
+                        if b_case_sensitive {
+                            if let Some(npos) = text.find(pattern) {
+                                pos =       npos + pattern.len();
+                            } else {
+                                return false;
+                            }
+                        } else {
+                            if let Some(npos) = lower_text.find(pattern) {
+                                pos =       npos + pattern.len();
+                            } else {
+                                return false
+                            }
+                        }
+                    }
+                }
+            },
+            CompiledFilterToken::SmartNext(pattern) => {
+                if b_case_sensitive {
+                    State {index, pos } = apply_next(State {index, pos}, pattern, &text, &back_tracking);
+                } else {
+                    State {index, pos } = apply_next(State {index, pos}, pattern, &lower_text, &back_tracking);
+                }
+            },
+            CompiledFilterToken::CaseSensitive => {
+                b_case_sensitive = true;
+            },
+            CompiledFilterToken::CaseInSensitive => {
+                b_case_sensitive = false;
+            },
+            CompiledFilterToken::AnyOrder => {
+                b_same_order = false;
+            },
+            CompiledFilterToken::SameOrder => {
+                b_same_order = true;
+            },
+            CompiledFilterToken::WholePath => {
+                if  b_last_element {
+                    b_last_element = false;
+                    pos = pos + offset;
+                }
+            }  
+            CompiledFilterToken::LastElement => {
+                if !b_last_element {
+                    b_last_element = true;
+                    pos = if pos > offset { pos - offset} else { 0 };
+                }
+            },
+            CompiledFilterToken::Glob(glob) => {
+                if  b_last_element {
+                    if !glob.is_match(last_text) {
+                        return false;
+                    }
+                } else {
+                    if !glob.is_match(text) {
+                        return false;
+                    }
+                }
+            },
         }
     }
     true
