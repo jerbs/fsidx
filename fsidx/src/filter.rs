@@ -39,6 +39,7 @@ enum CompiledFilterToken {
     LastElement,
 }
 
+#[derive(Clone, Debug)]
 struct Options {
     case_sensitive: bool,
     same_order: bool,

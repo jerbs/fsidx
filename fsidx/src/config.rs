@@ -24,14 +24,26 @@ pub struct LocateConfig {
     pub order: Order,
     #[serde(default)]
     pub what: What,
-    #[serde(default)]
+    #[serde(default = "default_smart_spaces")]
     pub smart_spaces: bool,
-    #[serde(default)]
+    #[serde(default = "default_word_boundaries")]
     pub word_boundaries: bool,
-    #[serde(default)]
+    #[serde(default = "default_literal_separator")]
     pub literal_separator: bool,
     #[serde(default)]
     pub mode: Mode,
+}
+
+fn default_smart_spaces() -> bool {
+    true
+}
+
+fn default_word_boundaries() -> bool {
+    false
+}
+
+fn default_literal_separator() -> bool {
+    false
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
