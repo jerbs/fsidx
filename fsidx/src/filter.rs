@@ -132,7 +132,7 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
             FilterToken::WordBoundary(on) => { options.word_boundaries = *on; }
             FilterToken::Auto => { mode = Mode::Auto; },
             FilterToken::Smart => { mode = Mode::Plain; },
-            FilterToken::Glob => { mode = Mode::Glob; },
+            FilterToken::Glob => {mode = Mode::Glob; },
         }
     }
     Ok(compiled)
@@ -160,110 +160,153 @@ fn expand_smart_spaces(text: String, mut b_same_order: bool, compiled: &mut Comp
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 struct State {
-    index: usize,
-    pos: usize,
+    filter_index: usize,
+    pos: usize,             // actual or lower-case position in whole path or last element
 }
+
+struct Part<'a> {
+    text: &'a str,
+    offset: usize,
+}
+
 
 pub fn apply(text: &str, filter: &CompiledFilter, config: &LocateConfig) -> bool {
     let mut options = Options::new(config);
-    let lower_text: String = text.to_lowercase();
-    let (last_text, lower_last_text, offset) = if let Some(pos_last_slash) = text.rfind('/') {
-        let last_text = &text[pos_last_slash+1..];               // '/' is one byte
-        let lower_last_text = &lower_text[pos_last_slash+1..];   // '/' is one byte
-        (last_text, lower_last_text, pos_last_slash+1)
+    let lower_text = if filter.requires_lower_case {
+        Some(text.to_lowercase())
     } else {
-        (text, &lower_text[..], 0)
+        None
     };
-    
-    let mut pos: usize = 0;   // Either whole path position or last element position depending on b_last_element.
-    let mut index = 0;
-    
-    let filter_len = filter.token.len();
-    
-    let mut back_tracking = State { index: 0, pos: 0 };
-    while index < filter_len {
-        let token = &filter.token[index];
+    let (actual_last, lower_last) = if filter.requires_last_element {
+        let a = if let Some(pos_last_slash) = text.rfind('/') {
+            Some(Part {
+                text: &text[pos_last_slash + 1..],
+                offset: pos_last_slash + 1,
+            })
+        } else {
+            Some(Part {
+                text: &text[..],
+                offset: 0,
+            })
+        };
+        let b = if let Some(lower_text) = &lower_text {
+            if let Some(pos_last_slash) = lower_text.rfind('/') {
+                Some(Part {
+                    text: &lower_text[pos_last_slash + 1..],
+                    offset: pos_last_slash + 1,
+                })
+            } else {
+                Some(Part {
+                    text: &lower_text[..],
+                    offset: 0,
+                })
+            }
+        } else {
+            None
+        };
+        (a, b)
+    } else {
+        (None, None)
+    };
+    let mut state = State {
+        filter_index: 0,
+        pos: 0,
+    };
+    let mut back_tracking = state;
+    while state.filter_index < filter.token.len() {
+        let token = &filter.token[state.filter_index];
         if let CompiledFilterToken::SmartText(_) = token {
-            back_tracking = State { index, pos };
+            back_tracking = state;
         }
-        index = index + 1;
+        state.filter_index = state.filter_index + 1;
         match token {
             CompiledFilterToken::SmartText(pattern) => {
-                if options.last_element {
-                    if options.same_order {
-                        if options.case_sensitive {
-                            if let Some(npos) = last_text[pos..].find(pattern) {
-                                pos = pos + npos + pattern.len();
-                            } else {
-                                return false;
-                            }
-                        } else {
-                            if let Some(npos) = lower_last_text[pos..].find(pattern) {
-                                pos = pos + npos + pattern.len();
-                            } else {
-                                return false;
-                            }
-                        }
-                    } else {
-                        if options.case_sensitive {
-                            if let Some(npos) = last_text.find(pattern) {
-                                pos =       npos + pattern.len();
-                            } else {
-                                return false;
-                            }
-                        } else {
-                            if let Some(npos) = lower_last_text.find(pattern) {
-                                pos =       npos + pattern.len();
-                            } else {
-                                return false;
-                            }
-                        }
-                    }
+                let (text, start) = match (options.last_element, options.same_order, options.case_sensitive) {
+                    (true,  true,  true)  => (actual_last.as_ref().unwrap().text,    state.pos),
+                    (true,  true,  false) => (lower_last.as_ref().unwrap().text,     state.pos),
+                    (true,  false, true)  => (actual_last.as_ref().unwrap().text,    0),
+                    (true,  false, false) => (lower_last.as_ref().unwrap().text,     0),
+                    (false, true,  true)  => (text,                                  state.pos),
+                    (false, true,  false) => (lower_text.as_ref().unwrap().as_str(), state.pos),
+                    (false, false, true)  => (text,                                  0),
+                    (false, false, false) => (lower_text.as_ref().unwrap().as_str(), 0),
+                };
+                if let Some(npos) = text[start..].find(pattern) {
+                    state.pos = start + npos + pattern.len();
                 } else {
-                    if options.same_order {
-                        if options.case_sensitive {
-                            if let Some(npos) = text[pos..].find(pattern) {
-                                pos = pos + npos + pattern.len();
-                            } else {
-                                return false;
-                            }
-                        } else {
-                            if let Some(npos) = lower_text[pos..].find(pattern) {
-                                pos = pos + npos + pattern.len();
-                            } else {
-                                return false;
-                            }
-                        }
-                    } else {
-                        if options.case_sensitive {
-                            if let Some(npos) = text.find(pattern) {
-                                pos =       npos + pattern.len();
-                            } else {
-                                return false;
-                            }
-                        } else {
-                            if let Some(npos) = lower_text.find(pattern) {
-                                pos =       npos + pattern.len();
-                            } else {
-                                return false
-                            }
-                        }
-                    }
+                    return false;
                 }
             },
             CompiledFilterToken::SmartNext(pattern) => {
-                if options.case_sensitive {
-                    State {index, pos } = apply_next(State {index, pos}, pattern, &text, &back_tracking);
+                let text = match (options.last_element, options.same_order, options.case_sensitive) {
+                    (true,  true,  true)  => actual_last.as_ref().unwrap().text,
+                    (true,  true,  false) => lower_last.as_ref().unwrap().text,
+                    (true,  false, true)  => actual_last.as_ref().unwrap().text,
+                    (true,  false, false) => lower_last.as_ref().unwrap().text,
+                    (false, true,  true)  => text,
+                    (false, true,  false) => lower_text.as_ref().unwrap().as_str(),
+                    (false, false, true)  => text,
+                    (false, false, false) => lower_text.as_ref().unwrap().as_str(),
+                };
+                let skip = skip_separator(&text[state.pos..]);
+                if text[state.pos+skip..].starts_with(pattern) {
+                    state.pos = state.pos + skip + pattern.len();
                 } else {
-                    State {index, pos } = apply_next(State {index, pos}, pattern, &lower_text, &back_tracking);
-                }
+                    // Restore old state:
+                    state = back_tracking;
+                    // Consume one letter:
+                    if let Some(ch) = text[state.pos..].chars().next() {
+                        state.pos += ch.len_utf8();
+                    }
+                };
             },
             CompiledFilterToken::CaseSensitive => {
-                options.case_sensitive = true;
+                if !options.case_sensitive {
+                    // lower -> actual
+                    options.case_sensitive = true;
+                    if options.last_element {
+                        if state.pos != 0 {
+                            let pos = lower_last.as_ref().unwrap().text[0..state.pos].chars().count();
+                            if let Some((new_pos, _ch)) = actual_last.as_ref().unwrap().text.char_indices().nth(pos) {
+                                assert_eq!(new_pos, pos);
+                                state.pos = new_pos;
+                            }
+                        }
+                    } else {
+                        if state.pos != 0 {
+                            let pos = lower_text.as_ref().unwrap().as_str()[0..state.pos].chars().count();
+                            if let Some((new_pos, _ch)) = text.char_indices().nth(pos) {
+                                assert_eq!(new_pos, pos);
+                                state.pos = new_pos;
+                            }
+                        }
+                    }
+                }
             },
             CompiledFilterToken::CaseInSensitive => {
-                options.case_sensitive = false;
+                if options.case_sensitive {
+                    // actual -> lower
+                    options.case_sensitive = false;
+                    if options.last_element {
+                        if state.pos != 0 {
+                            let pos = actual_last.as_ref().unwrap().text[0..state.pos].chars().count();
+                            if let Some((new_pos, _ch)) = lower_last.as_ref().unwrap().text.char_indices().nth(pos) {
+                                assert_eq!(new_pos, pos);
+                                state.pos = new_pos;
+                            }
+                        }
+                    } else {
+                        if state.pos != 0 {
+                            let pos = text[0..state.pos].chars().count();
+                            if let Some((new_pos, _ch)) = lower_text.as_ref().unwrap().char_indices().nth(pos) {
+                                assert_eq!(new_pos, pos);
+                                state.pos = new_pos;
+                            }
+                        }
+                    }
+                }
             },
             CompiledFilterToken::AnyOrder => {
                 options.same_order = false;
@@ -273,19 +316,29 @@ pub fn apply(text: &str, filter: &CompiledFilter, config: &LocateConfig) -> bool
             },
             CompiledFilterToken::WholePath => {
                 if  options.last_element {
+                    let offset = if options.case_sensitive || !filter.requires_lower_case {
+                        actual_last.as_ref().unwrap().offset
+                    } else {
+                        lower_last.as_ref().unwrap().offset
+                    };
                     options.last_element = false;
-                    pos = pos + offset;
+                    state.pos = state.pos + offset;
                 }
             }  
             CompiledFilterToken::LastElement => {
                 if !options.last_element {
+                    let offset = if options.case_sensitive || !filter.requires_lower_case {
+                        actual_last.as_ref().unwrap().offset
+                    } else {
+                        lower_last.as_ref().unwrap().offset
+                    };
                     options.last_element = true;
-                    pos = if pos > offset { pos - offset} else { 0 };
+                    state.pos = if state.pos > offset { state.pos - offset} else { 0 };
                 }
             },
             CompiledFilterToken::Glob(glob) => {
                 if  options.last_element {
-                    if !glob.is_match(last_text) {
+                    if !glob.is_match(actual_last.as_ref().unwrap().text) {
                         return false;
                     }
                 } else {
@@ -297,20 +350,6 @@ pub fn apply(text: &str, filter: &CompiledFilter, config: &LocateConfig) -> bool
         }
     }
     true
-}
-
-fn apply_next(State {mut index, mut pos }: State, pattern: &String, text: &str, back_tracking: &State) -> State {
-    let skip = skip_separator(&text[pos..]);
-    if text[pos+skip..].starts_with(pattern) {
-        pos = pos + skip + pattern.len();
-    } else {
-        index = back_tracking.index;
-        pos = back_tracking.pos;
-        if let Some(ch) = text[pos..].chars().next() {
-            pos += ch.len_utf8();
-        }
-    };
-    State { index, pos }
 }
 
 fn skip_separator(text: &str) -> usize {
