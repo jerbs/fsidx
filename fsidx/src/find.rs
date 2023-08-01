@@ -96,7 +96,21 @@ impl FindExt for &str {
     }
 
     fn skip_smart_space(&self, start: usize) -> usize {
-        todo!()
+        let mut it = self[start..].chars();
+        if let Some(ch) = it.next() {
+            let len = ch.len_utf8();
+            if ch.is_whitespace() {
+                len
+            } else if ch == '-' {
+                len
+            } else if ch == '_' {
+                len
+            } else {
+                0
+            }
+        } else {
+            0
+        }
     }
 
     fn tag_case_sensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>> {
@@ -194,5 +208,14 @@ mod tests {
         assert_eq!("Ööö Ööö".find_case_insensitive(6, "ööö"), Some(7..13));
         assert_eq!("aöö öÖö ööÖ".find_case_insensitive(6, "ööö"), Some(6..12));
         assert_eq!("öüö öaö ööÖ".find_case_insensitive(6, "ööö"), Some(13..19));
+    }
+
+    #[test]
+    fn test_skip_smart_space() {
+        assert_eq!("foo bar".skip_smart_space(2), 0);
+        assert_eq!("foo bar".skip_smart_space(3), 1);
+        assert_eq!("foo-bar".skip_smart_space(3), 1);
+        assert_eq!("foo_bar".skip_smart_space(3), 1);
+        assert_eq!("foo bar".skip_smart_space(4), 0);
     }
 }
