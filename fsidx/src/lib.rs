@@ -1,5 +1,6 @@
 mod config;
 mod filter;
+mod find;
 mod locate;
 // mod locate_mt;
 mod update;
