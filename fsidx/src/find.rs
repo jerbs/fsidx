@@ -6,8 +6,8 @@ pub trait FindExt {
     fn skip_smart_space(&self, start: usize) -> usize;
     fn tag_case_sensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>>;
     fn tag_case_insensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>>;
-    fn find_word_boundary(&self, start: usize) -> Option<usize>;
-    fn tag_word_boundary(&self, start: usize) -> bool;
+    fn find_word_start_boundary(&self, start: usize) -> Option<usize>;
+    fn tag_word_end_boundary(&self, start: usize) -> bool;
 }
 
 impl FindExt for &str {
@@ -162,12 +162,102 @@ impl FindExt for &str {
         }
     }
 
-    fn find_word_boundary(&self, start: usize) -> Option<usize> {
-        todo!()
+    fn find_word_start_boundary(&self, start: usize) -> Option<usize> {
+        let mut pos = start;
+        if pos == self.len() {
+            return None;
+        }
+        let mut previous = 0;
+        if pos == 0 {
+            let mut it = self.chars();
+            if let Some(first) = it.next() {
+                if first.is_alphanumeric() {
+                    return Some(0);
+                } else {
+                    pos = first.len_utf8();
+                }
+            } else {
+                return None;
+            }
+        } else {
+            // Find start of previous character:
+            previous = pos - 1;
+            while !self.is_char_boundary(previous) {
+                previous = previous - 1;
+            }
+        };
+
+        // Here self contains atleast one character.
+        let mut it = self[previous..].chars();
+        let ch1 = it.next().unwrap();
+        let mut ch1 = Features::new(ch1);
+        while let Some(ch2) = it.next() {
+            let ch2 = Features::new(ch2);
+            if !ch1.is_alphabetic && !ch1.is_numeric && (ch2.is_alphabetic || ch2.is_numeric) {
+                return Some(pos);
+            } else if ch1.is_numeric && ch2.is_alphabetic {
+                return Some(pos);
+            } else if ch1.is_alphabetic && ch2.is_numeric {
+                return Some(pos);
+            } else if ch1.is_lower && ch2.is_upper {
+                return Some(pos);
+            }
+            pos = pos + ch2.ch.len_utf8();
+            ch1 = ch2;
+        }
+        None        
     }
 
-    fn tag_word_boundary(&self, start: usize) -> bool {
-        todo!()
+    fn tag_word_end_boundary(&self, start: usize) -> bool {
+        if start == 0 {
+            return false;
+        }
+        let mut previous = start - 1;
+        while !self.is_char_boundary(previous) {
+            previous = previous - 1;
+        }
+        let mut it = self[previous..].chars();
+        let ch1 = it.next().unwrap();
+        if start == self.len() {
+            if ch1.is_alphanumeric() {
+                return true;
+            }
+        }
+        let ch2 = it.next().unwrap();
+        let ch1 = Features::new(ch1);
+        let ch2 = Features::new(ch2);
+        if (ch1.is_alphabetic || ch1.is_numeric) && !ch2.is_alphabetic && !ch2.is_numeric {
+            true
+        } else if ch1.is_numeric && ch2.is_alphabetic {
+            true
+        } else if ch1.is_alphabetic && ch2.is_numeric {
+            true
+        } else if ch1.is_lower && ch2.is_upper {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Features {
+    ch: char,
+    is_alphabetic: bool,
+    is_lower: bool,
+    is_upper: bool,
+    is_numeric: bool,
+}
+
+impl Features {
+    pub fn new(ch: char) -> Features {
+        Features {
+            ch,
+            is_alphabetic: ch.is_alphabetic(),
+            is_lower: ch.is_lowercase(),
+            is_upper: ch.is_uppercase(),
+            is_numeric: ch.is_numeric(),
+        }
     }
 }
 
@@ -306,5 +396,44 @@ mod tests {
         assert_eq!("foo bär baÜ".tag_case_insensitive(8, "BAÜ"), None);
         assert_eq!("foo bär fuß".tag_case_insensitive(9, "FUS"), Some(9..13));
         assert_eq!("foo bär fuß".tag_case_insensitive(9, "FUSS"), Some(9..13));
+    }
+
+    #[test]
+    fn test_find_word_start_boundary() {
+        assert_eq!("".find_word_start_boundary(0), None);
+        assert_eq!("foo".find_word_start_boundary(0), Some(0));
+        assert_eq!("foo".find_word_start_boundary(3), None);
+        assert_eq!(" foo".find_word_start_boundary(0), Some(1));
+        assert_eq!("  foo".find_word_start_boundary(0), Some(2));
+        assert_eq!("  Foo".find_word_start_boundary(0), Some(2));
+        assert_eq!("  123".find_word_start_boundary(0), Some(2));
+        assert_eq!("a foo".find_word_start_boundary(1), Some(2));
+        assert_eq!("foo bar".find_word_start_boundary(1), Some(4));
+        assert_eq!("foo bar".find_word_start_boundary(1), Some(4));
+        assert_eq!("Foobar".find_word_start_boundary(1), None);
+        assert_eq!("FooBar".find_word_start_boundary(1), Some(3));
+        assert_eq!("Foo123".find_word_start_boundary(1), Some(3));
+        assert_eq!("123Foo".find_word_start_boundary(1), Some(3));
+    }
+
+    #[test]
+    fn test_tag_word_end_boundary() {
+        assert_eq!("".tag_word_end_boundary(0), false);
+        assert_eq!("foo".tag_word_end_boundary(0), false);
+        assert_eq!("foo".tag_word_end_boundary(1), false);
+        assert_eq!("foo".tag_word_end_boundary(2), false);
+        assert_eq!("foo".tag_word_end_boundary(3), true);
+        assert_eq!("foo ".tag_word_end_boundary(3), true);
+        assert_eq!("123".tag_word_end_boundary(0), false);
+        assert_eq!("123".tag_word_end_boundary(1), false);
+        assert_eq!("123".tag_word_end_boundary(2), false);
+        assert_eq!("123".tag_word_end_boundary(3), true);
+        assert_eq!("123 ".tag_word_end_boundary(3), true);
+        assert_eq!("foo123".tag_word_end_boundary(3), true);
+        assert_eq!("123foo".tag_word_end_boundary(3), true);
+        assert_eq!("FooBar".tag_word_end_boundary(3), true);
+        assert_eq!("foobar".tag_word_end_boundary(3), false);
+        assert_eq!("123456".tag_word_end_boundary(3), false);
+        assert_eq!("------".tag_word_end_boundary(3), false);
     }
 }
