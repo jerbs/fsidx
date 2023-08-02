@@ -114,11 +114,52 @@ impl FindExt for &str {
     }
 
     fn tag_case_sensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>> {
-        todo!()
+        let mut hey_it = self[start..].chars();
+        let mut needle_it = pattern.chars();
+        let mut end = start;
+        while let Some(needle_ch) = needle_it.next() {
+            if let Some(hey_ch) = hey_it.next() {
+                if hey_ch == needle_ch {
+                    end = end + hey_ch.len_utf8();
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+        Some(start..end)
     }
 
-    fn tag_case_insensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>> {
-        todo!()
+    fn tag_case_insensitive(&self, start: usize, upper_case_pattern: &str) -> Option<Range<usize>> {
+        let mut hey_it = self[start..].chars();
+        let mut needle_it = upper_case_pattern.chars();
+        if let Some(mut needle_ch) = needle_it.next() {
+            let mut end = start;
+            loop {
+                if let Some(hey_ch) = hey_it.next() {
+                    end = end + hey_ch.len_utf8();
+                    let mut hey_ch_upper_it = hey_ch.to_uppercase();
+                    while let Some(hey_ch_upper) = hey_ch_upper_it.next() {
+                        if hey_ch_upper == needle_ch {
+                            // Found next character of needle:
+                            if let Some(ch) = needle_it.next() {
+                                needle_ch = ch;
+                            } else {
+                                // Found complete needle:
+                                return Some(start..end);
+                            }
+                        } else {
+                            return None;
+                        }    
+                    }
+                } else {
+                    return None;
+                }
+            }
+        } else {
+            Some(start..start)
+        }
     }
 
     fn find_word_boundary(&self, start: usize) -> Option<usize> {
@@ -220,5 +261,50 @@ mod tests {
         assert_eq!("foo-bar".skip_smart_space(3), 1);
         assert_eq!("foo_bar".skip_smart_space(3), 1);
         assert_eq!("foo bar".skip_smart_space(4), 0);
+    }
+
+    #[test]
+    fn test_tag_case_sensitive() {
+        assert_eq!("".tag_case_sensitive(0, "foo"), None);
+        assert_eq!("foo bar baz".tag_case_sensitive(0, ""), Some(0..0));
+        assert_eq!("foo bar baz".tag_case_sensitive(5, ""), Some(5..5));
+        assert_eq!("foo bar baz".tag_case_sensitive(11, ""), Some(11..11));
+        assert_eq!("foo bar baz".tag_case_sensitive(0, "foo"), Some(0..3));
+        assert_eq!("foo bar baz".tag_case_sensitive(4, "bar"), Some(4..7));
+        assert_eq!("foo bar baz".tag_case_sensitive(3, "bar"), None);
+        assert_eq!("foo bar baz".tag_case_sensitive(8, "baz"), Some(8..11));
+        assert_eq!("foo bar baz".tag_case_sensitive(8, "bazz"), None);
+    }
+
+    #[test]
+    fn test_tag_case_sensitive_multi_byte() {
+        assert_eq!("föo bar baz".tag_case_sensitive(0, "föo"), Some(0..4));
+        assert_eq!("föo bär baz".tag_case_sensitive(5, "bär"), Some(5..9));
+        assert_eq!("föo bär baz".tag_case_sensitive(4, "bär"), None);
+        assert_eq!("foo bär baü".tag_case_sensitive(9, "baü"), Some(9..13));
+        assert_eq!("foo bär baü".tag_case_sensitive(8, "baü"), None);
+    }
+
+    #[test]
+    fn test_tag_case_insensitive() {
+        assert_eq!("".tag_case_insensitive(0, "FOO"), None);
+        assert_eq!("fOo bar baz".tag_case_insensitive(0, ""), Some(0..0));
+        assert_eq!("foO bar baz".tag_case_insensitive(5, ""), Some(5..5));
+        assert_eq!("foo bar bAz".tag_case_insensitive(11, ""), Some(11..11));
+        assert_eq!("Foo bar baz".tag_case_insensitive(0, "FOO"), Some(0..3));
+        assert_eq!("foo bAr baz".tag_case_insensitive(4, "BAR"), Some(4..7));
+        assert_eq!("foo bar baZ".tag_case_insensitive(8, "BAZ"), Some(8..11));
+        assert_eq!("foo bar baZ".tag_case_insensitive(8, "BAZZ"), None);
+    }
+
+    #[test]
+    fn test_tag_case_insensitive_multi_byte() {
+        assert_eq!("fÖo bar baz".tag_case_insensitive(0, "FÖO"), Some(0..4));
+        assert_eq!("fÖo bÄr baz".tag_case_insensitive(5, "BÄR"), Some(5..9));
+        assert_eq!("föo bÄr baz".tag_case_insensitive(4, "BÄR"), None);
+        assert_eq!("foo bär baÜ".tag_case_insensitive(9, "BAÜ"), Some(9..13));
+        assert_eq!("foo bär baÜ".tag_case_insensitive(8, "BAÜ"), None);
+        assert_eq!("foo bär fuß".tag_case_insensitive(9, "FUS"), Some(9..13));
+        assert_eq!("foo bär fuß".tag_case_insensitive(9, "FUSS"), Some(9..13));
     }
 }
