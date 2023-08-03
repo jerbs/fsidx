@@ -148,8 +148,7 @@ mod tests {
         let filter = locate_filter(token).unwrap();
         let config = LocateConfig::default();
         let compiled = fsidx::compile(filter.as_slice(), &config).unwrap();
-        let config = LocateConfig::default();
-        fsidx::apply(text, &compiled, &config)
+        fsidx::apply(text, &compiled)
     }
 
     #[test]

@@ -3,6 +3,7 @@ use std::ops::Range;
 pub trait FindExt {
     fn find_case_sensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>>;
     fn find_case_insensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>>;
+    fn skip_character(&self, start: usize) -> usize;
     fn skip_smart_space(&self, start: usize) -> usize;
     fn tag_case_sensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>>;
     fn tag_case_insensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>>;
@@ -95,9 +96,19 @@ impl FindExt for &str {
         }
     }
 
+    fn skip_character(&self, start: usize) -> usize {
+        let mut it = self[start..].chars();
+        let skip = if let Some(ch) = it.next() {
+            ch.len_utf8()
+        } else {
+            0
+        };
+        start + skip
+    }
+
     fn skip_smart_space(&self, start: usize) -> usize {
         let mut it = self[start..].chars();
-        if let Some(ch) = it.next() {
+        let skip = if let Some(ch) = it.next() {
             let len = ch.len_utf8();
             if ch.is_whitespace() {
                 len
@@ -110,7 +121,8 @@ impl FindExt for &str {
             }
         } else {
             0
-        }
+        };
+        start + skip
     }
 
     fn tag_case_sensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>> {
@@ -346,11 +358,18 @@ mod tests {
 
     #[test]
     fn test_skip_smart_space() {
-        assert_eq!("foo bar".skip_smart_space(2), 0);
-        assert_eq!("foo bar".skip_smart_space(3), 1);
-        assert_eq!("foo-bar".skip_smart_space(3), 1);
-        assert_eq!("foo_bar".skip_smart_space(3), 1);
-        assert_eq!("foo bar".skip_smart_space(4), 0);
+        assert_eq!("foo bar".skip_smart_space(2), 2);
+        assert_eq!("foo bar".skip_smart_space(3), 4);
+        assert_eq!("foo-bar".skip_smart_space(3), 4);
+        assert_eq!("foo_bar".skip_smart_space(3), 4);
+        assert_eq!("foo bar".skip_smart_space(4), 4);
+    }
+
+    #[test]
+    fn test_skip_character() {
+        assert_eq!("foo bar".skip_character(2), 3);
+        assert_eq!("1ä".skip_character(1), 3);   // 0xC3, 0xA4 (ä)
+        assert_eq!("1ä".skip_character(1), 2);   // 0x61 (a), 0xCC, 0x88 (Trema for previous letter)
     }
 
     #[test]

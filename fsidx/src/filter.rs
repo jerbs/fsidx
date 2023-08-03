@@ -1,5 +1,6 @@
 use globset::{GlobBuilder, GlobMatcher};
 use crate::config::{LocateConfig, Mode};
+use crate::find::FindExt;
 use crate::locate::LocateError;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -22,21 +23,21 @@ pub enum FilterToken {
 #[derive(Clone, Debug)]
 pub struct CompiledFilter {
     token: Vec<CompiledFilterToken>,
-    requires_lower_case: bool,
-    requires_last_element: bool,
 }
 
 #[derive(Clone, Debug)]
 enum CompiledFilterToken {
-    Glob(GlobMatcher),
-    SmartText(String),
-    SmartNext(String),
-    CaseSensitive,
-    CaseInSensitive,    // default
-    AnyOrder,           // default
-    SameOrder,
-    WholePath,          // default
-    LastElement,
+    GoToStart,
+    GoToLastElement,
+    EnsureLastElement,
+    Glob(GlobMatcher, bool),
+    FindCaseInsensitive(String),
+    FindCaseSensitive(String),
+    FindWordStartBoundary,
+    SkipSmartSpace,
+    ExpectCaseInsensitive(String),
+    ExpectCaseSensitive(String),
+    ExpectWordEndBoundary,
 }
 
 #[derive(Clone, Debug)]
@@ -75,41 +76,79 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
     let mut options = Options::new(config);
     let mut compiled = CompiledFilter {
         token: Vec::new(),
-        requires_lower_case: false,
-        requires_last_element: false,
     };
     let mut mode: Mode = config.mode;
     for token in filter {
         match token {
-            FilterToken::CaseSensitive   => { options.case_sensitive = true; compiled.token.push(CompiledFilterToken::CaseSensitive); },
-            FilterToken::CaseInSensitive => { options.case_sensitive = false; compiled.token.push(CompiledFilterToken::CaseInSensitive); },
+            FilterToken::CaseSensitive   => { options.case_sensitive = true; },
+            FilterToken::CaseInSensitive => { options.case_sensitive = false; },
             FilterToken::Text(text) => {
                 let mode = if mode == Mode::Auto {
                     if text.contains("*") { Mode::Glob }
                     else if text.contains("?") { Mode::Glob }
                     else if text.contains("[") { Mode::Glob }
                     else if text.contains("]") { Mode::Glob }
+                    else if text.contains("{") { Mode::Glob }
+                    else if text.contains("}") { Mode::Glob }
                     else { Mode::Plain }
                 } else {
                     mode
                 };
                 if mode == Mode::Plain {
-                    if options.case_sensitive {
-                        if options.smart_spaces {
-                            expand_smart_spaces(text.clone(), options.same_order, &mut compiled);
-                        } else {
-                            compiled.token.push(CompiledFilterToken::SmartText(text.clone()));
+                    if options.same_order {
+                        if options.last_element {
+                            compiled.token.push(CompiledFilterToken::EnsureLastElement);
                         }
                     } else {
-                        compiled.requires_lower_case = true;
-                        if options.smart_spaces {
-                            expand_smart_spaces(text.to_lowercase(), options.same_order, &mut compiled);
+                        if options.last_element {
+                            compiled.token.push(CompiledFilterToken::GoToLastElement);
                         } else {
-                            compiled.token.push(CompiledFilterToken::SmartText(text.to_lowercase()));
+                            compiled.token.push(CompiledFilterToken::GoToStart);
                         }
+                    }
+                    let fragments: Vec<String> = if options.smart_spaces {
+                        text
+                        .split(&[' ', '-', '_'])
+                        .into_iter()   
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                    } else {
+                        vec![text.clone()]
+                    };
+                    let mut it = fragments.into_iter();
+                    if let Some(fragment) = it.next() {
+                        if options.word_boundaries {
+                            compiled.token.push(CompiledFilterToken::FindWordStartBoundary);
+                            if options.case_sensitive {
+                                compiled.token.push(CompiledFilterToken::ExpectCaseSensitive(fragment));
+                            } else {
+                                compiled.token.push(CompiledFilterToken::ExpectCaseInsensitive(fragment.to_uppercase()));
+                            }
+                        } else {
+                            if options.case_sensitive {
+                                compiled.token.push(CompiledFilterToken::FindCaseSensitive(fragment));
+                            } else {
+                                compiled.token.push(CompiledFilterToken::FindCaseInsensitive(fragment.to_uppercase()));
+                            }
+                        }
+                    }
+                    while let Some(fragment) = it.next() {
+                        compiled.token.push(CompiledFilterToken::SkipSmartSpace);
+                        if options.case_sensitive {
+                            compiled.token.push(CompiledFilterToken::ExpectCaseSensitive(fragment));
+                        } else {
+                            compiled.token.push(CompiledFilterToken::ExpectCaseInsensitive(fragment.to_uppercase()));
+                        }
+                    }
+                    if options.word_boundaries {
+                        compiled.token.push(CompiledFilterToken::ExpectWordEndBoundary);
                     }
                 }  
                 else if mode == Mode::Glob {
+                    if options.last_element {
+                        compiled.token.push(CompiledFilterToken::GoToLastElement);
+                    } 
                     let glob_matcher = GlobBuilder::new(text.as_str())
                         .case_insensitive(options.case_sensitive)
                         .literal_separator(options.literal_separator)
@@ -118,16 +157,13 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
                         .build()
                         .map_err(|err| LocateError::GlobPatternError(text.clone(), err))?
                         .compile_matcher();
-                    compiled.token.push(CompiledFilterToken::Glob(glob_matcher));
+                    compiled.token.push(CompiledFilterToken::Glob(glob_matcher, options.last_element));
                 };
-                if options.last_element {
-                    compiled.requires_last_element = true;
-                }
             },
-            FilterToken::AnyOrder => { options.same_order = false; compiled.token.push(CompiledFilterToken::AnyOrder); }
-            FilterToken::SameOrder => { options.same_order = true; compiled.token.push(CompiledFilterToken::SameOrder); }
-            FilterToken::WholePath => { options.last_element = false; compiled.token.push(CompiledFilterToken::WholePath); },
-            FilterToken::LastElement => { options.last_element = true; compiled.token.push(CompiledFilterToken::LastElement); },
+            FilterToken::AnyOrder => { options.same_order = false; }
+            FilterToken::SameOrder => { options.same_order = true; }
+            FilterToken::WholePath => { options.last_element = false; },
+            FilterToken::LastElement => { options.last_element = true; },
             FilterToken::SmartSpaces(on) => { options.smart_spaces = *on; },
             FilterToken::LiteralSeparator(on) => { options.literal_separator = *on; },
             FilterToken::WordBoundary(on) => { options.word_boundaries = *on; }
@@ -139,78 +175,14 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
     Ok(compiled)
 }
 
-fn expand_smart_spaces(text: String, mut b_same_order: bool, compiled: &mut CompiledFilter) {
-    let mut first = true;
-    let b_stored_same_order = b_same_order;
-    for part in text.split(&[' ', '-', '_']) {
-        if !part.is_empty() {
-            if !first && !b_same_order {
-                b_same_order = true;
-                compiled.token.push(CompiledFilterToken::SameOrder);
-            }
-            if first {
-                compiled.token.push(CompiledFilterToken::SmartText(part.to_string()));
-                first = false;
-            } else {
-                compiled.token.push(CompiledFilterToken::SmartNext(part.to_string()));
-            }    
-        }
-    }
-    if !b_stored_same_order && b_same_order {
-        compiled.token.push(CompiledFilterToken::AnyOrder);
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 struct State {
     filter_index: usize,
     pos: usize,             // actual or lower-case position in whole path or last element
 }
 
-struct Part<'a> {
-    text: &'a str,
-    offset: usize,
-}
-
-
-pub fn apply(text: &str, filter: &CompiledFilter, config: &LocateConfig) -> bool {
-    let mut options = Options::new(config);
-    let lower_text = if filter.requires_lower_case {
-        Some(text.to_lowercase())
-    } else {
-        None
-    };
-    let (actual_last, lower_last) = if filter.requires_last_element {
-        let a = if let Some(pos_last_slash) = text.rfind('/') {
-            Some(Part {
-                text: &text[pos_last_slash + 1..],
-                offset: pos_last_slash + 1,
-            })
-        } else {
-            Some(Part {
-                text: &text[..],
-                offset: 0,
-            })
-        };
-        let b = if let Some(lower_text) = &lower_text {
-            if let Some(pos_last_slash) = lower_text.rfind('/') {
-                Some(Part {
-                    text: &lower_text[pos_last_slash + 1..],
-                    offset: pos_last_slash + 1,
-                })
-            } else {
-                Some(Part {
-                    text: &lower_text[..],
-                    offset: 0,
-                })
-            }
-        } else {
-            None
-        };
-        (a, b)
-    } else {
-        (None, None)
-    };
+pub fn apply(text: &str, filter: &CompiledFilter) -> bool {
+    let mut pos_last: Option<usize> = None;    
     let mut state = State {
         filter_index: 0,
         pos: 0,
@@ -218,153 +190,101 @@ pub fn apply(text: &str, filter: &CompiledFilter, config: &LocateConfig) -> bool
     let mut back_tracking = state;
     while state.filter_index < filter.token.len() {
         let token = &filter.token[state.filter_index];
-        if let CompiledFilterToken::SmartText(_) = token {
+        if let CompiledFilterToken::FindCaseInsensitive(_) = token {
+            back_tracking = state;
+        } else if let CompiledFilterToken::FindCaseSensitive(_) = token {
+            back_tracking = state;
+        } else if let CompiledFilterToken::FindWordStartBoundary = token {
             back_tracking = state;
         }
         state.filter_index = state.filter_index + 1;
         match token {
-            CompiledFilterToken::SmartText(pattern) => {
-                let (text, start) = match (options.last_element, options.same_order, options.case_sensitive) {
-                    (true,  true,  true)  => (actual_last.as_ref().unwrap().text,    state.pos),
-                    (true,  true,  false) => (lower_last.as_ref().unwrap().text,     state.pos),
-                    (true,  false, true)  => (actual_last.as_ref().unwrap().text,    0),
-                    (true,  false, false) => (lower_last.as_ref().unwrap().text,     0),
-                    (false, true,  true)  => (text,                                  state.pos),
-                    (false, true,  false) => (lower_text.as_ref().unwrap().as_str(), state.pos),
-                    (false, false, true)  => (text,                                  0),
-                    (false, false, false) => (lower_text.as_ref().unwrap().as_str(), 0),
+            CompiledFilterToken::GoToStart => {
+                state.pos = 0;
+            },
+            CompiledFilterToken::GoToLastElement => {
+                if pos_last.is_none() {
+                    pos_last = Some(if let Some(pos_last) = text.rfind('/') {pos_last + 1} else {0});
+                }
+                state.pos = pos_last.unwrap();
+            },
+            CompiledFilterToken::EnsureLastElement => {
+                if pos_last.is_none() {
+                    pos_last = Some(if let Some(pos_last) = text.rfind('/') {pos_last + 1} else {0});
+                }
+                if state.pos < pos_last.unwrap() {
+                    state.pos = pos_last.unwrap();
+                }
+            },
+            CompiledFilterToken::Glob(glob, last_element) => {
+                let text = if *last_element {
+                    if pos_last.is_none() {
+                        pos_last = Some(if let Some(pos_last) = text.rfind('/') {pos_last + 1} else {0});
+                    }
+                    &text[pos_last.unwrap()..]
+                } else {
+                    text
                 };
-                if let Some(npos) = text[start..].find(pattern) {
-                    state.pos = start + npos + pattern.len();
+                if !glob.is_match(text) {
+                    return false;
+                };
+            },
+            CompiledFilterToken::FindCaseInsensitive(pattern) => {
+                if let Some(range) = text.find_case_insensitive(state.pos, pattern) {
+                    state.pos = range.end;
                 } else {
                     return false;
                 }
             },
-            CompiledFilterToken::SmartNext(pattern) => {
-                let text = match (options.last_element, options.same_order, options.case_sensitive) {
-                    (true,  true,  true)  => actual_last.as_ref().unwrap().text,
-                    (true,  true,  false) => lower_last.as_ref().unwrap().text,
-                    (true,  false, true)  => actual_last.as_ref().unwrap().text,
-                    (true,  false, false) => lower_last.as_ref().unwrap().text,
-                    (false, true,  true)  => text,
-                    (false, true,  false) => lower_text.as_ref().unwrap().as_str(),
-                    (false, false, true)  => text,
-                    (false, false, false) => lower_text.as_ref().unwrap().as_str(),
-                };
-                let skip = skip_separator(&text[state.pos..]);
-                if text[state.pos+skip..].starts_with(pattern) {
-                    state.pos = state.pos + skip + pattern.len();
+            CompiledFilterToken::FindCaseSensitive(pattern) => {
+                if let Some(range) = text.find_case_sensitive(state.pos, pattern) {
+                    state.pos = range.end;
                 } else {
-                    // Restore old state:
-                    state = back_tracking;
-                    // Consume one letter:
-                    if let Some(ch) = text[state.pos..].chars().next() {
-                        state.pos += ch.len_utf8();
-                    }
-                };
-            },
-            CompiledFilterToken::CaseSensitive => {
-                if !options.case_sensitive {
-                    // lower -> actual
-                    options.case_sensitive = true;
-                    if options.last_element {
-                        if state.pos != 0 {
-                            let pos = lower_last.as_ref().unwrap().text[0..state.pos].chars().count();
-                            if let Some((new_pos, _ch)) = actual_last.as_ref().unwrap().text.char_indices().nth(pos) {
-                                assert_eq!(new_pos, pos);
-                                state.pos = new_pos;
-                            }
-                        }
-                    } else {
-                        if state.pos != 0 {
-                            let pos = lower_text.as_ref().unwrap().as_str()[0..state.pos].chars().count();
-                            if let Some((new_pos, _ch)) = text.char_indices().nth(pos) {
-                                assert_eq!(new_pos, pos);
-                                state.pos = new_pos;
-                            }
-                        }
-                    }
+                    return false;
                 }
             },
-            CompiledFilterToken::CaseInSensitive => {
-                if options.case_sensitive {
-                    // actual -> lower
-                    options.case_sensitive = false;
-                    if options.last_element {
-                        if state.pos != 0 {
-                            let pos = actual_last.as_ref().unwrap().text[0..state.pos].chars().count();
-                            if let Some((new_pos, _ch)) = lower_last.as_ref().unwrap().text.char_indices().nth(pos) {
-                                assert_eq!(new_pos, pos);
-                                state.pos = new_pos;
-                            }
-                        }
-                    } else {
-                        if state.pos != 0 {
-                            let pos = text[0..state.pos].chars().count();
-                            if let Some((new_pos, _ch)) = lower_text.as_ref().unwrap().char_indices().nth(pos) {
-                                assert_eq!(new_pos, pos);
-                                state.pos = new_pos;
-                            }
-                        }
-                    }
-                }
-            },
-            CompiledFilterToken::AnyOrder => {
-                options.same_order = false;
-            },
-            CompiledFilterToken::SameOrder => {
-                options.same_order = true;
-            },
-            CompiledFilterToken::WholePath => {
-                if  options.last_element {
-                    let offset = if options.case_sensitive || !filter.requires_lower_case {
-                        actual_last.as_ref().unwrap().offset
-                    } else {
-                        lower_last.as_ref().unwrap().offset
-                    };
-                    options.last_element = false;
-                    state.pos = state.pos + offset;
-                }
-            }  
-            CompiledFilterToken::LastElement => {
-                if !options.last_element {
-                    let offset = if options.case_sensitive || !filter.requires_lower_case {
-                        actual_last.as_ref().unwrap().offset
-                    } else {
-                        lower_last.as_ref().unwrap().offset
-                    };
-                    options.last_element = true;
-                    state.pos = if state.pos > offset { state.pos - offset} else { 0 };
-                }
-            },
-            CompiledFilterToken::Glob(glob) => {
-                if  options.last_element {
-                    if !glob.is_match(actual_last.as_ref().unwrap().text) {
-                        return false;
-                    }
+            CompiledFilterToken::FindWordStartBoundary => {
+                if let Some(pos) = text.find_word_start_boundary(state.pos) {
+                    state.pos = pos;
                 } else {
-                    if !glob.is_match(text) {
-                        return false;
-                    }
+                    return false;
+                }
+
+            },
+            CompiledFilterToken::SkipSmartSpace => {
+                state.pos = text.skip_smart_space(state.pos);
+            },
+            CompiledFilterToken::ExpectCaseInsensitive(pattern) => {
+                if let Some(range) = text.tag_case_insensitive(state.pos, pattern) {
+                    state.pos = range.end;
+                } else {
+                    state = State {
+                        filter_index: back_tracking.filter_index,
+                        pos: text.skip_character(back_tracking.pos),
+                    };
+                }
+            },
+            CompiledFilterToken::ExpectCaseSensitive(pattern) => {
+                if let Some(range) = text.tag_case_sensitive(state.pos, pattern) {
+                    state.pos = range.end;
+                } else {
+                    state = State {
+                        filter_index: back_tracking.filter_index,
+                        pos: text.skip_character(back_tracking.pos),
+                    };
+                }
+            },
+            CompiledFilterToken::ExpectWordEndBoundary => {
+                if !text.tag_word_end_boundary(state.pos) {
+                    state = State {
+                        filter_index: back_tracking.filter_index,
+                        pos: text.skip_character(back_tracking.pos),
+                    };
                 }
             },
         }
     }
     true
-}
-
-fn skip_separator(text: &str) -> usize {
-    let mut chars = text.chars();
-    if let Some(first) = chars.next() {
-        match first {
-            ' ' => first.len_utf8(),
-            '-' => first.len_utf8(),
-            '_' => first.len_utf8(),
-            _ => 0,
-        }    
-    } else {
-        0
-    }
 }
 
 #[cfg(test)]
@@ -385,8 +305,7 @@ mod tests {
     fn process(flt: &[FilterToken]) -> Vec<String> {
         let config = LocateConfig::default();
         let flt = compile(flt, &config).unwrap();
-        let config = LocateConfig::default();
-        DATA.iter().filter(|entry: &&&str| apply(entry, &flt, &config)).map(|x: &&str| String::from(*x)).collect()
+        DATA.iter().filter(|entry: &&&str| apply(entry, &flt)).map(|x: &&str| String::from(*x)).collect()
     }
 
     static EMPTY: [&str; 0] = [];
@@ -462,34 +381,34 @@ mod tests {
     #[test]
     fn continue_after_last_match() {
         let config = LocateConfig::default();
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo"), t("foo")], &config).unwrap(), &config), false);
-        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::SameOrder, t("foo"), t("baz")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo bar baz", &compile(&[t("foo baz")], &config).unwrap(), &config), false);
-        assert_eq!(apply("fOO bar baZ", &compile(&[t("Foo Bar")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo foo", &compile(&[t("foo foo")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo bar", &compile(&[t("foo foo")], &config).unwrap(), &config), false);
-        assert_eq!(apply("foo-foo", &compile(&[t("foo foo")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo_foo", &compile(&[t("foo foo")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo")], &config).unwrap()), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::SameOrder, t("foo"), t("foo")], &config).unwrap()), false);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::SameOrder, t("foo"), t("baz")], &config).unwrap()), true);
+        assert_eq!(apply("foo bar baz", &compile(&[t("foo baz")], &config).unwrap()), false);
+        assert_eq!(apply("fOO bar baZ", &compile(&[t("Foo Bar")], &config).unwrap()), true);
+        assert_eq!(apply("foo foo", &compile(&[t("foo foo")], &config).unwrap()), true);
+        assert_eq!(apply("foo bar", &compile(&[t("foo foo")], &config).unwrap()), false);
+        assert_eq!(apply("foo-foo", &compile(&[t("foo foo")], &config).unwrap()), true);
+        assert_eq!(apply("foo_foo", &compile(&[t("foo foo")], &config).unwrap()), true);
     }
 
     #[test]
     fn smart_space() {
         let config = LocateConfig::default();
-        assert_eq!(apply("foo bar abc baz", &compile(&[t("foo baz")], &config).unwrap(), &config), false);
-        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar abc")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo-bar-abc-baz", &compile(&[t("bar abc")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar abc")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar-abc")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar_abc")], &config).unwrap(), &config), true);
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("foo baz")], &config).unwrap()), false);
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar abc")], &config).unwrap()), true);
+        assert_eq!(apply("foo-bar-abc-baz", &compile(&[t("bar abc")], &config).unwrap()), true);
+        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar abc")], &config).unwrap()), true);
+        assert_eq!(apply("foo_bar_abc_baz", &compile(&[t("bar-abc")], &config).unwrap()), true);
+        assert_eq!(apply("foo bar abc baz", &compile(&[t("bar_abc")], &config).unwrap()), true);
     }
 
     #[test]
     fn retry_on_failure_with_next() {
         let config = LocateConfig::default();
-        assert_eq!(apply("foo bar baz", &compile(&[t("b-a-r")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo baz bar", &compile(&[t("b-a-r")], &config).unwrap(), &config), true);
-        assert_eq!(apply("foo baz bax", &compile(&[t("b-a-r")], &config).unwrap(), &config), false);
+        assert_eq!(apply("foo bar baz", &compile(&[t("b-a-r")], &config).unwrap()), true);
+        assert_eq!(apply("foo baz bar", &compile(&[t("b-a-r")], &config).unwrap()), true);
+        assert_eq!(apply("foo baz bax", &compile(&[t("b-a-r")], &config).unwrap()), false);
     }
 
     #[test]
@@ -500,53 +419,7 @@ mod tests {
         // 0xCC, 0x88: Trema for previous letter (https://www.compart.com/de/unicode/U+0308)
         // 0xC3, 0xA4: ä
         // println!("{:02X?}", text.bytes());
-        assert_eq!(apply(text, &compile(&[t("a-b")], &config).unwrap(), &config), false);
-    }
-
-    #[test]
-    fn position_calculation_same_order() {
-        let config = LocateConfig::default();
-        let text = "              a            bc";
-        for a in &[CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive] {
-            for b in &[CompiledFilterToken::WholePath, CompiledFilterToken::LastElement] {
-                assert_eq!(apply(text, &CompiledFilter {
-                    token: vec![
-                        a.clone(),
-                        b.clone(),
-                        CompiledFilterToken::SameOrder,
-                        CompiledFilterToken::SmartText("a".to_string()),
-                        CompiledFilterToken::SmartText("b".to_string()),
-                        CompiledFilterToken::SmartNext("c".to_string())
-                    ],
-                    requires_last_element: true,
-                    requires_lower_case: true,
-                }, &config),
-                true);
-            }
-        }
-    }
-
-    #[test]
-    fn position_calculation_any_order() {
-        let config = LocateConfig::default();
-        let text = "              bc            a";
-        for a in &[CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive] {
-            for b in &[CompiledFilterToken::WholePath, CompiledFilterToken::LastElement] {
-                assert_eq!(apply(text, &CompiledFilter {
-                    token: vec![
-                        a.clone(),
-                        b.clone(),
-                        CompiledFilterToken::AnyOrder,
-                        CompiledFilterToken::SmartText("a".to_string()),
-                        CompiledFilterToken::SmartText("b".to_string()),
-                        CompiledFilterToken::SmartNext("c".to_string())
-                    ],
-                    requires_last_element: true,
-                    requires_lower_case: true,
-                }, &config),
-                true);
-            }
-        }
+        assert_eq!(apply(text, &compile(&[t("a-b")], &config).unwrap()), false);
     }
 
     #[test]
@@ -558,16 +431,17 @@ mod tests {
         ], &config).unwrap();
         let expected = CompiledFilter {
             token: vec![
-                CompiledFilterToken::SmartText("a".to_string()),
-                CompiledFilterToken::SameOrder,
-                CompiledFilterToken::SmartNext("b".to_string()),
-                CompiledFilterToken::SmartNext("c".to_string()),
-                CompiledFilterToken::SmartNext("d".to_string()),
-                CompiledFilterToken::AnyOrder,
-                CompiledFilterToken::SmartText("e".to_string()),
+                CompiledFilterToken::GoToStart,
+                CompiledFilterToken::FindCaseInsensitive("A".to_string()),
+                CompiledFilterToken::SkipSmartSpace,
+                CompiledFilterToken::ExpectCaseInsensitive("B".to_string()),
+                CompiledFilterToken::SkipSmartSpace,
+                CompiledFilterToken::ExpectCaseInsensitive("C".to_string()),
+                CompiledFilterToken::SkipSmartSpace,
+                CompiledFilterToken::ExpectCaseInsensitive("D".to_string()),
+                CompiledFilterToken::GoToStart,
+                CompiledFilterToken::FindCaseInsensitive("E".to_string()),
             ],
-            requires_last_element: true,
-            requires_lower_case: true,
         };
         // Can't use assert_eq! here, since PartialEq is not implemented for GlobMatcher.
         check_compiled_filter(actual, expected);
@@ -579,15 +453,15 @@ mod tests {
         let actual = compile(&[t("- a-b c- -d -")], &config).unwrap();
         let expected = CompiledFilter {
             token: vec![
-                CompiledFilterToken::SmartText("a".to_string()),
-                CompiledFilterToken::SameOrder,
-                CompiledFilterToken::SmartNext("b".to_string()),
-                CompiledFilterToken::SmartNext("c".to_string()),
-                CompiledFilterToken::SmartNext("d".to_string()),
-                CompiledFilterToken::AnyOrder,
+                CompiledFilterToken::GoToStart,
+                CompiledFilterToken::FindCaseInsensitive("A".to_string()),
+                CompiledFilterToken::SkipSmartSpace,
+                CompiledFilterToken::ExpectCaseInsensitive("B".to_string()),
+                CompiledFilterToken::SkipSmartSpace,
+                CompiledFilterToken::ExpectCaseInsensitive("C".to_string()),
+                CompiledFilterToken::SkipSmartSpace,
+                CompiledFilterToken::ExpectCaseInsensitive("D".to_string()),
             ],
-            requires_last_element: true,
-            requires_lower_case: true,
         };
         check_compiled_filter(actual, expected);
     }
@@ -596,15 +470,16 @@ mod tests {
         assert_eq!(actual.token.len(), expected.token.len());
         for (idx, (a,b)) in expected.token.iter().zip(actual.token.iter()).enumerate() {
             let ok = match (a, b) {
-                (CompiledFilterToken::Glob(a), CompiledFilterToken::Glob(b)) => a.glob() == b.glob(),
-                (CompiledFilterToken::SmartText(a), CompiledFilterToken::SmartText(b)) => a == b,
-                (CompiledFilterToken::SmartNext(a), CompiledFilterToken::SmartNext(b)) => a == b,
-                (CompiledFilterToken::CaseSensitive, CompiledFilterToken::CaseSensitive) => true,
-                (CompiledFilterToken::CaseInSensitive, CompiledFilterToken::CaseInSensitive) => true,
-                (CompiledFilterToken::AnyOrder, CompiledFilterToken::AnyOrder) => true,
-                (CompiledFilterToken::SameOrder, CompiledFilterToken::SameOrder) => true,
-                (CompiledFilterToken::WholePath, CompiledFilterToken::WholePath) => true,
-                (CompiledFilterToken::LastElement, CompiledFilterToken::LastElement) => true,
+                (CompiledFilterToken::GoToStart, CompiledFilterToken::GoToStart) => true,
+                (CompiledFilterToken::GoToLastElement, CompiledFilterToken::GoToLastElement) => true,
+                (CompiledFilterToken::Glob(a1, a2), CompiledFilterToken::Glob(b1, b2)) => a1.glob() == b1.glob() && a2 == b2,
+                (CompiledFilterToken::FindCaseInsensitive(a), CompiledFilterToken::FindCaseInsensitive(b)) => a == b,
+                (CompiledFilterToken::FindCaseSensitive(a), CompiledFilterToken::FindCaseSensitive(b)) => a == b,
+                (CompiledFilterToken::FindWordStartBoundary, CompiledFilterToken::FindWordStartBoundary) => true,
+                (CompiledFilterToken::SkipSmartSpace, CompiledFilterToken::SkipSmartSpace) => true,
+                (CompiledFilterToken::ExpectCaseInsensitive(a), CompiledFilterToken::ExpectCaseInsensitive(b)) => a == b,
+                (CompiledFilterToken::ExpectCaseSensitive(a), CompiledFilterToken::ExpectCaseSensitive(b)) => a == b,
+                (CompiledFilterToken::ExpectWordEndBoundary, CompiledFilterToken::ExpectWordEndBoundary) => true,
                 (_, _) => false,
             };
             assert!(ok, "Element {idx} not as expected: {a:?} != {b:?}");
