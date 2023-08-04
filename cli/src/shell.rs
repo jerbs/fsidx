@@ -66,7 +66,9 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
                 interrupt.store(false, Ordering::Relaxed);
                 match process_shell_line(&config, &line, interrupt.clone(), &selection) {
                     Ok(ShellAction::Found(s)) => {
-                        selection = Some(s);
+                        if !s.is_empty() {
+                            selection = Some(s);
+                        }
                     },
                     Ok(ShellAction::Quit) => {
                         // Don't store \q in history.
