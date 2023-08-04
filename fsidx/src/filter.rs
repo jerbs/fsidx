@@ -38,6 +38,7 @@ enum CompiledFilterToken {
     ExpectCaseInsensitive(String),
     ExpectCaseSensitive(String),
     ExpectWordEndBoundary,
+    Nothing,
 }
 
 #[derive(Clone, Debug)]
@@ -169,6 +170,9 @@ pub fn compile(filter: &[FilterToken], config: &LocateConfig) -> Result<Compiled
             FilterToken::Glob => {mode = Mode::Glob; },
         }
     }
+    if compiled.token.is_empty() {
+        compiled.token.push(CompiledFilterToken::Nothing);
+    }
     Ok(compiled)
 }
 
@@ -279,6 +283,9 @@ pub fn apply(text: &str, filter: &CompiledFilter) -> bool {
                     };
                 }
             },
+            CompiledFilterToken::Nothing => {
+                return false;
+            },
         }
     }
     true
@@ -314,8 +321,8 @@ mod tests {
     }
 
     #[test]
-    fn all_with_empty_list() {
-        assert_eq!(process(&[]), [S0, S1, S2, S3, S4, S5, S6, S7]);
+    fn nothing_with_empty_list() {
+        assert_eq!(process(&[]), EMPTY);
     }
 
     #[test]
