@@ -527,6 +527,27 @@ mod tests {
     }
 
     #[test]
+    fn test_word_boundary() {
+        let config = LocateConfig::default();
+        assert_eq!(apply("foobar", &compile(&[FilterToken::WordBoundary(true), t("foo")], &config).unwrap()), false);
+        assert_eq!(apply("foobar", &compile(&[FilterToken::WordBoundary(true), t("bar")], &config).unwrap()), false);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::WordBoundary(true), t("foo")], &config).unwrap()), true);
+        assert_eq!(apply("foo bar", &compile(&[FilterToken::WordBoundary(true), t("bar")], &config).unwrap()), true);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::WordBoundary(true), t("bar")], &config).unwrap()), true);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::WordBoundary(true), t("ar")], &config).unwrap()), false);
+        assert_eq!(apply("foo bar baz", &compile(&[FilterToken::WordBoundary(true), t("ba")], &config).unwrap()), false);
+        assert_eq!(apply("FooBarBaz", &compile(&[FilterToken::WordBoundary(true), t("Bar")], &config).unwrap()), true);
+        assert_eq!(apply("FooBarBaz", &compile(&[FilterToken::WordBoundary(true), t("Ba")], &config).unwrap()), false);
+        assert_eq!(apply("FooBarBaz", &compile(&[FilterToken::WordBoundary(true), t("ar")], &config).unwrap()), false);
+        assert_eq!(apply("abc123def456", &compile(&[FilterToken::WordBoundary(true), t("123")], &config).unwrap()), true);
+        assert_eq!(apply("abc123def456", &compile(&[FilterToken::WordBoundary(true), t("def")], &config).unwrap()), true);
+        assert_eq!(apply("abc123def456", &compile(&[FilterToken::WordBoundary(true), t("12")], &config).unwrap()), false);
+        assert_eq!(apply("abc123def456", &compile(&[FilterToken::WordBoundary(true), t("23")], &config).unwrap()), false);
+        assert_eq!(apply("abc123def456", &compile(&[FilterToken::WordBoundary(true), t("de")], &config).unwrap()), false);
+        assert_eq!(apply("abc123def456", &compile(&[FilterToken::WordBoundary(true), t("ef")], &config).unwrap()), false);   
+    }
+
+    #[test]
     fn utf8_slice() {
         let text = "öäüÄÖÜß";
         assert_eq!(text.len(), 14);

@@ -67,6 +67,8 @@ fn locate_filter(token: Vec<Token>) -> Result<Vec<FilterToken>, CliError> {
                 "no_smart_spaces"  | "s0" => FilterToken::SmartSpaces(false),
                 "literal_separator"    |  "ls" => FilterToken::LiteralSeparator(true),
                 "no_literal_separator" | "nls" => FilterToken::LiteralSeparator(false),
+                "word_boundary"    | "b" => FilterToken::WordBoundary(true),
+                "no_word_boundary" | "B" => FilterToken::WordBoundary(false),
                 "auto"  | "-0" => FilterToken::Auto,
                 "plain" | "-1" => FilterToken::Smart,
                 "glob"  | "-2" => FilterToken::Glob,
