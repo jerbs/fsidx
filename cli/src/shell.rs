@@ -44,7 +44,7 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
         }
     });
     let mut rl = Editor::<()>::new();
-    let history = if let Some(db_path) = &config.db_path {
+    let history = if let Some(db_path) = &config.index.db_path {
         let history = Path::new(&db_path).join("history.txt");
         if let Err(err) = rl.load_history(&history) {
             if matches!(err, ReadlineError::Errno(nix::errno::Errno::ENOENT)) {
@@ -189,7 +189,7 @@ fn open_append(command: &mut Command, path: &Path, found: &mut bool, config: &Co
         stderr().write_all(b"'")?;
         stderr().write_all(path.as_os_str().as_bytes())?;
         stderr().write_all(b"' not exists.")?;
-        for base in &config.folder {
+        for base in &config.index.folder {
             if path.starts_with(base) {
                 if !base.exists() {
                     stderr().write_all( b" Device not mounted.")?;

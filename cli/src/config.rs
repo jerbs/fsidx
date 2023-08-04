@@ -7,9 +7,14 @@ use fsidx::{LocateConfig, VolumeInfo};
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    pub folder: Vec<PathBuf>,
-    #[serde(default, flatten)]
+    pub index: Index,
     pub locate: LocateConfig,
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Index {
+    pub folder: Vec<PathBuf>,
     pub db_path: Option<PathBuf>,
 }
 
@@ -74,7 +79,7 @@ fn resolve_leading_tilde(config: &mut Config) {
     let tilde = Path::new("~");
     if let Ok(home) = env::var("HOME") {
         let home = Path::new(&home);
-        for folder in &mut config.folder {
+        for folder in &mut config.index.folder {
             if folder.starts_with(tilde) {
                 match folder.strip_prefix(tilde) {
                     Ok(f) => *folder = home.join(f),
@@ -86,8 +91,8 @@ fn resolve_leading_tilde(config: &mut Config) {
 }
 
 fn set_db_path(config: &mut Config, config_file_path: &Path) {
-    if None == config.db_path {
-        config.db_path = match config_file_path.parent() {
+    if None == config.index.db_path {
+        config.index.db_path = match config_file_path.parent() {
             Some(path) => Some(path.to_path_buf()),
             None => None
         }
@@ -95,7 +100,7 @@ fn set_db_path(config: &mut Config, config_file_path: &Path) {
 }
 
 pub fn get_volume_info(config: &Config) -> Option<Vec<VolumeInfo> > {
-    let volume_info = config.folder
+    let volume_info = config.index.folder
     .iter()
     .filter_map(|folder| {
         let database = get_db_file_path(config, folder)?;
@@ -107,7 +112,7 @@ pub fn get_volume_info(config: &Config) -> Option<Vec<VolumeInfo> > {
 }
 
 pub fn get_db_file_path(config: &Config, folder: &Path) -> Option<PathBuf> {
-    if let Some(db_path) = config.db_path.as_deref() {
+    if let Some(db_path) = config.index.db_path.as_deref() {
         let s: &str = folder.to_str().unwrap();
         let mut file_name = s.replace("/", "_");
         file_name.push_str(".fsdb");
@@ -128,10 +133,13 @@ mod tests {
         let home = env::var("HOME").unwrap();
 
         let data = indoc! {
-         r#"folder = [
+         r#"[index]
+            folder = [
                 "~/Music",
                 "/Volumes/Music"
             ]
+
+            [locate]
             case_sensitive = false
             order = "any_order"
             what = "whole_path"
@@ -144,9 +152,12 @@ mod tests {
         assert_eq!(
             config,
             Config {
-                folder: vec![
-                    PathBuf::from(format!("{}/Music", home)),
-                    PathBuf::from("/Volumes/Music")],
+                index: Index {
+                    folder: vec![
+                        PathBuf::from(format!("{}/Music", home)),
+                        PathBuf::from("/Volumes/Music")],
+                    db_path: None
+                },
                 locate: LocateConfig {
                     case_sensitive: false,
                     order: Order::AnyOrder,
@@ -156,14 +167,18 @@ mod tests {
                     literal_separator: false,
                     mode: Mode::Auto,
                 },
-                db_path: None,
-                });
+            });
     }
 
     #[test]
     fn encode_toml() {
         let config = Config {
-            folder: vec![PathBuf::from("~/Music"), PathBuf::from("/Volumes/Music")],
+            index: Index {
+                folder: vec![
+                    PathBuf::from("~/Music"),
+                    PathBuf::from("/Volumes/Music")],
+                db_path: None
+            },
             locate: LocateConfig {
                 case_sensitive: true,
                 order: Order::AnyOrder,
@@ -173,11 +188,13 @@ mod tests {
                 literal_separator: false,
                 mode: Mode::Auto,
             },
-            db_path: None
         };
         let toml = toml::to_string(&config).unwrap();
         let expected = indoc! {
-         r#"folder = ["~/Music", "/Volumes/Music"]
+         r#"[index]
+            folder = ["~/Music", "/Volumes/Music"]
+
+            [locate]
             case_sensitive = true
             order = "any_order"
             what = "whole_path"
