@@ -8,7 +8,7 @@ use fsidx::{LocateConfig, VolumeInfo};
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub folder: Vec<PathBuf>,
-    #[serde(default)]
+    #[serde(default, flatten)]
     pub locate: LocateConfig,
     pub db_path: Option<PathBuf>,
 }
@@ -132,8 +132,6 @@ mod tests {
                 "~/Music",
                 "/Volumes/Music"
             ]
-
-            [locate]
             case_sensitive = false
             order = "any_order"
             what = "whole_path"
@@ -180,8 +178,6 @@ mod tests {
         let toml = toml::to_string(&config).unwrap();
         let expected = indoc! {
          r#"folder = ["~/Music", "/Volumes/Music"]
-
-            [locate]
             case_sensitive = true
             order = "any_order"
             what = "whole_path"
