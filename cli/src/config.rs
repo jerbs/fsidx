@@ -121,7 +121,7 @@ pub fn get_db_file_path(config: &Config, folder: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use indoc::indoc;
-    use fsidx::{Case, Mode, Order, What};
+    use fsidx::{Mode, Order, What};
     
     #[test]
     fn toml_parsing() {
@@ -134,7 +134,7 @@ mod tests {
             ]
 
             [locate]
-            case = "ignore_case"
+            case_sensitive = false
             order = "any_order"
             what = "whole_path"
             smart_spaces = true
@@ -150,7 +150,7 @@ mod tests {
                     PathBuf::from(format!("{}/Music", home)),
                     PathBuf::from("/Volumes/Music")],
                 locate: LocateConfig {
-                    case: Case::IgnoreCase,
+                    case_sensitive: false,
                     order: Order::AnyOrder,
                     what: What::WholePath,
                     smart_spaces: true,
@@ -167,7 +167,7 @@ mod tests {
         let config = Config {
             folder: vec![PathBuf::from("~/Music"), PathBuf::from("/Volumes/Music")],
             locate: LocateConfig {
-                case: Case::IgnoreCase,
+                case_sensitive: true,
                 order: Order::AnyOrder,
                 what: What::WholePath,
                 smart_spaces: true,
@@ -182,7 +182,7 @@ mod tests {
          r#"folder = ["~/Music", "/Volumes/Music"]
 
             [locate]
-            case = "ignore_case"
+            case_sensitive = true
             order = "any_order"
             what = "whole_path"
             smart_spaces = true

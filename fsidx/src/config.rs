@@ -18,8 +18,8 @@ pub enum Settings {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct LocateConfig {
-    #[serde(default)]
-    pub case: Case,
+    #[serde(default = "default_case_sensitive")]
+    pub case_sensitive: bool,
     #[serde(default)]
     pub order: Order,
     #[serde(default)]
@@ -34,6 +34,10 @@ pub struct LocateConfig {
     pub mode: Mode,
 }
 
+fn default_case_sensitive() -> bool {
+    false
+}
+
 fn default_smart_spaces() -> bool {
     true
 }
@@ -44,14 +48,6 @@ fn default_word_boundaries() -> bool {
 
 fn default_literal_separator() -> bool {
     false
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
-pub enum Case {
-    MatchCase,
-    IgnoreCase,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -82,20 +78,14 @@ pub enum Mode {
 impl Default for LocateConfig {
     fn default() -> Self {
         LocateConfig {
-            case: Case::IgnoreCase,
-            order: Order::AnyOrder,
-            what: What::WholePath,
-            smart_spaces: true,
-            word_boundaries: false,
-            literal_separator: false,
-            mode: Mode::Auto,
+            case_sensitive: default_case_sensitive(),
+            order: Order::default(),
+            what: What::default(),
+            smart_spaces: default_smart_spaces(),
+            word_boundaries: default_word_boundaries(),
+            literal_separator: default_literal_separator(),
+            mode: Mode::default(),
         }
-    }
-}
-
-impl Default for Case {
-    fn default() -> Self {
-        Case::IgnoreCase
     }
 }
 

@@ -53,10 +53,7 @@ struct Options {
 impl Options {
     fn new(config: &LocateConfig) -> Self {
         Options {
-            case_sensitive: match config.case {
-                crate::Case::MatchCase => true,
-                crate::Case::IgnoreCase => false,
-            },
+            case_sensitive: config.case_sensitive,
             same_order: match config.order {
                 crate::Order::AnyOrder => false,
                 crate::Order::SameOrder => true,
