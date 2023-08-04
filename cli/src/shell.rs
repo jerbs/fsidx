@@ -5,7 +5,7 @@ use signal_hook::iterator::Signals;
 use signal_hook::consts::signal::SIGINT;
 use std::os::unix::prelude::OsStrExt;
 use std::process::Command;
-use std::{env::Args, process};
+use std::env::Args;
 use std::io::{Error, Result as IOResult, stdout, stderr, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -65,11 +65,24 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
                 rl.add_history_entry(line.as_str());
                 interrupt.store(false, Ordering::Relaxed);
                 match process_shell_line(&config, &line, interrupt.clone(), &selection) {
-                    Ok(Some(s)) => {selection = Some(s);},
-                    Ok(None) => {},
-                    Err(CliError::LocateError(LocateError::Interrupted)) => {println!("CTRL-C");},
-                    Err(CliError::LocateError(LocateError::BrokenPipe))  => {println!("EOF");},
-                    Err(err) => { print_error(); eprintln!("{}", err);},
+                    Ok(ShellAction::Found(s)) => {
+                        selection = Some(s);
+                    },
+                    Ok(ShellAction::Quit) => {
+                        // Don't store \q in history.
+                        break;
+                    },
+                    Ok(ShellAction::None) => {
+                    },
+                    Err(CliError::LocateError(LocateError::Interrupted)) => {
+                        println!("CTRL-C");
+                    },
+                    Err(CliError::LocateError(LocateError::BrokenPipe))  => {
+                        println!("EOF");
+                    },
+                    Err(err) => {
+                        print_error(); eprintln!("{}", err);
+                    },
                 };
             },
             Err(ReadlineError::Interrupted) => {
@@ -85,26 +98,32 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
                 break
             }
         }
-    }
-    if let Some(history) = history {
-        rl.save_history(&history).unwrap();
+        if let Some(history) = &history {
+            rl.save_history(history).unwrap();
+        }
     }
     Ok(())
 }
 
-fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<Option<Vec<PathBuf>>, CliError>{
+enum ShellAction {
+    Found(Vec<PathBuf>),
+    None,
+    Quit,
+}
+
+fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<ShellAction, CliError> {
     let token = tokenize_shell(line)?;
     if let Some(Token::Text(command)) = token.first() {
         // Backslash commands:
         if command.starts_with('\\') {
             match command.as_str() {
-                "\\q" if token.len() == 1 => { process::exit(0); },
+                "\\q" if token.len() == 1 => { return Ok(ShellAction::Quit); },
                 "\\o" => { open_command(config, &token[1..], selection)?; },
                 "\\u" if token.len() == 1 => { update_shell(config)?; },
                 "\\h" => { let _ = help_shell(); },
                 _ => { let _ = help_shell_short(); },
             };
-            return Ok(None);
+            return Ok(ShellAction::None);
         }
         // Open commands:
         if match command.parse::<OpenRule>() {
@@ -114,15 +133,18 @@ fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, s
             _ => false,
         } {
             open_command(config, &token, selection)?;
-            return Ok(None);
+            return Ok(ShellAction::None);
         }
     }
     // Locate query:
-    locate_shell(
+    match locate_shell(
         config,
         line,
         Some(interrupt)
-    ).map(|v| Some(v))
+    ) {
+        Ok(paths) => Ok(ShellAction::Found(paths)),
+        Err(err) => Err(err),
+    }
 }
 
 fn open_command(config: &Config, token: &[Token], selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {

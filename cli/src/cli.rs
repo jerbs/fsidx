@@ -1,4 +1,4 @@
-use std::{env::{Args, args}, process};
+use std::env::{Args, args};
 use std::io::{Error, stdout, Write};
 use std::path::PathBuf;
 use crate::help::{help_cli, print_version, usage_cli};
@@ -95,9 +95,10 @@ pub fn main() -> i32 {
     if let Err(err) = process_main_command() {
         crate::shell::print_error();
         eprintln!("{}", err);
-        process::exit(1);
+        1
+    } else {
+        0
     }
-    0
 }
 
 fn process_main_command() -> Result<(), CliError> {
@@ -107,11 +108,11 @@ fn process_main_command() -> Result<(), CliError> {
     set_verbosity(main_options.verbose);
     if main_options.help {
         let _ = help_cli();
-        process::exit(0);
+        return Ok(());
     }
     if main_options.version {
         print_version();
-        process::exit(0);
+        return Ok(());
     }
     let config: Config = if let Some(config_file) = main_options.config_file {
         if verbosity() {
