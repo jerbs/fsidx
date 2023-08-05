@@ -14,7 +14,7 @@ path = "src/bin.rs"
 
 [dependencies]
 clap = "4.3.11"
-fsidx = "0.1.0"
+fsidx = {version = "0.1.0", path = "../fsidx" }
 globset = "0.4.11"
 indoc = "2.0.2"
 libc = "0.2.117"
