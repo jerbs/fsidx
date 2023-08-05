@@ -278,16 +278,16 @@ fn write_flags(
     for (index, flag) in flags.iter().enumerate() {
         stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
         write!(stdout, "{}", flag)?;
-        pos = pos + flag.chars().count();
+        pos += flag.chars().count();
         stdout.set_color(&ColorSpec::new())?;
         if index + 1 != flags.len() {
             write!(stdout, ", ")?;
-            pos = pos + 2;
+            pos += 2;
         }
     }
     while pos < indent {
         write!(stdout, " ")?;
-        pos = pos + 1;
+        pos += 1;
     }
     writeln!(stdout, "{}", description)?;
     Ok(())

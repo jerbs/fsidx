@@ -87,17 +87,7 @@ pub fn compile(
             }
             FilterToken::Text(text) => {
                 let mode = if mode == Mode::Auto {
-                    if text.contains("*") {
-                        Mode::Glob
-                    } else if text.contains("?") {
-                        Mode::Glob
-                    } else if text.contains("[") {
-                        Mode::Glob
-                    } else if text.contains("]") {
-                        Mode::Glob
-                    } else if text.contains("{") {
-                        Mode::Glob
-                    } else if text.contains("}") {
+                    if text.contains(['*', '?', '[', ']', '{', '}']) {
                         Mode::Glob
                     } else {
                         Mode::Plain
@@ -110,16 +100,13 @@ pub fn compile(
                         if options.last_element {
                             compiled.token.push(CompiledFilterToken::EnsureLastElement);
                         }
+                    } else if options.last_element {
+                        compiled.token.push(CompiledFilterToken::GoToLastElement);
                     } else {
-                        if options.last_element {
-                            compiled.token.push(CompiledFilterToken::GoToLastElement);
-                        } else {
-                            compiled.token.push(CompiledFilterToken::GoToStart);
-                        }
+                        compiled.token.push(CompiledFilterToken::GoToStart);
                     }
                     let fragments: Vec<String> = if options.smart_spaces {
                         text.split(&[' ', '-', '_'])
-                            .into_iter()
                             .filter(|s| !s.is_empty())
                             .map(str::to_string)
                             .collect()
@@ -143,21 +130,19 @@ pub fn compile(
                                         fragment.to_uppercase(),
                                     ));
                             }
+                        } else if options.case_sensitive {
+                            compiled
+                                .token
+                                .push(CompiledFilterToken::FindCaseSensitive(fragment));
                         } else {
-                            if options.case_sensitive {
-                                compiled
-                                    .token
-                                    .push(CompiledFilterToken::FindCaseSensitive(fragment));
-                            } else {
-                                compiled
-                                    .token
-                                    .push(CompiledFilterToken::FindCaseInsensitive(
-                                        fragment.to_uppercase(),
-                                    ));
-                            }
+                            compiled
+                                .token
+                                .push(CompiledFilterToken::FindCaseInsensitive(
+                                    fragment.to_uppercase(),
+                                ));
                         }
                     }
-                    while let Some(fragment) = it.next() {
+                    for fragment in it {
                         compiled.token.push(CompiledFilterToken::SkipSmartSpace);
                         if options.case_sensitive {
                             compiled
@@ -254,7 +239,7 @@ pub fn apply(text: &str, filter: &CompiledFilter) -> bool {
         } else if let CompiledFilterToken::FindWordStartBoundary = token {
             back_tracking = state;
         }
-        state.filter_index = state.filter_index + 1;
+        state.filter_index += 1;
         match token {
             CompiledFilterToken::GoToStart => {
                 state.pos = 0;

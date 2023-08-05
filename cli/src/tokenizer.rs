@@ -19,11 +19,10 @@ pub(crate) fn tokenize_cli(args: &mut Args) -> Result<Vec<Token>, CliError> {
 
 pub(crate) fn tokenize_arg(arg: &str) -> Vec<Token> {
     let mut token = Vec::new();
-    if arg.starts_with("--") {
-        let long_option = &arg[2..];
+    if let Some(long_option) = arg.strip_prefix("--") {
         token.push(Token::Option(long_option.to_string()));
-    } else if arg.starts_with("-") {
-        let mut remainder = &arg[1..];
+    } else if let Some(short_options) = arg.strip_prefix('-') {
+        let mut remainder = short_options;
         while !remainder.is_empty() {
             let short_option = remainder.chars().next().unwrap();
             let len = short_option.len_utf8();
@@ -99,7 +98,7 @@ pub(crate) fn tokenize_shell(line: &str) -> Result<Vec<Token>, CliError> {
                         token.push(Token::Text(swap(&mut item)));
                     };
                 }
-                '-' if item.len() == 0 => {
+                '-' if item.is_empty() => {
                     if short_option {
                         long_option = true;
                         short_option = false;

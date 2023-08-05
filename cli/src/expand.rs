@@ -44,7 +44,7 @@ impl<'a> Expand<'a> {
 // idx.           -- Open single file from selection
 fn expand_index<F: FnMut(&Path) -> Result<(), CliError>>(
     index: usize,
-    selection: &Vec<PathBuf>,
+    selection: &[PathBuf],
     f: &mut F,
 ) -> Result<(), CliError> {
     let path = selection
@@ -57,7 +57,7 @@ fn expand_index<F: FnMut(&Path) -> Result<(), CliError>>(
 fn expand_index_range<F: FnMut(&Path) -> Result<(), CliError>>(
     start: usize,
     end: usize,
-    selection: &Vec<PathBuf>,
+    selection: &[PathBuf],
     f: &mut F,
 ) -> Result<(), CliError> {
     for index in start..=end {
@@ -102,7 +102,7 @@ fn expand_index_with_glob<F: FnMut(&Path) -> Result<(), CliError>>(
         return Err(CliError::NotImplementedForNonUtf8Path(path.to_path_buf()));
     };
     let mut glob2 = String::from(path);
-    glob2.push_str("/");
+    glob2.push('/');
     glob2.push_str(glob);
     let glob2 = normalize(glob2);
     expand_glob(glob2.as_str(), selection, f)?;
@@ -158,9 +158,7 @@ impl Debug for OpenRule {
 impl Debug for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            _ => {
-                f.write_str("ParseError")?;
-            }
+            ParseError::Invalid(s) => f.write_fmt(format_args!("ParseError: {}", s))?,
         }
         Ok(())
     }
@@ -189,13 +187,9 @@ fn parse_open_rule(input: &str) -> IResult<&str, OpenRule> {
 }
 
 fn normalize(mut glob: String) -> String {
-    loop {
-        if let Some(pos2) = glob.find("/../") {
-            if let Some(pos1) = glob[0..pos2].rfind("/") {
-                glob.replace_range(pos1 + 1..pos2 + 4, "");
-            } else {
-                break;
-            }
+    while let Some(pos2) = glob.find("/../") {
+        if let Some(pos1) = glob[0..pos2].rfind('/') {
+            glob.replace_range(pos1 + 1..pos2 + 4, "");
         } else {
             break;
         }

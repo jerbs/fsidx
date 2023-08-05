@@ -44,8 +44,7 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
     mut f: F,
 ) -> Result<(), LocateError> {
     for vi in &volume_info {
-        f(LocateEvent::Searching(&vi.folder))
-            .map_err(|err| LocateError::WritingResultFailed(err))?;
+        f(LocateEvent::Searching(&vi.folder)).map_err(LocateError::WritingResultFailed)?;
         let res = locate_volume(vi, &filter, config, &interrupt, &mut f);
         if let Err(ref err) = res {
             match err {
@@ -53,8 +52,8 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
                 LocateError::WritingResultFailed(err) if err.kind() == ErrorKind::BrokenPipe => {
                     return Err(LocateError::BrokenPipe)
                 }
-                err => f(LocateEvent::SearchingFailed(&vi.folder, &err))
-                    .map_err(|err| LocateError::WritingResultFailed(err))?,
+                err => f(LocateEvent::SearchingFailed(&vi.folder, err))
+                    .map_err(LocateError::WritingResultFailed)?,
             }
         }
     }
@@ -63,13 +62,13 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
 
 pub fn locate_volume<F: FnMut(LocateEvent) -> IOResult<()>>(
     volume_info: &VolumeInfo,
-    filter: &Vec<FilterToken>,
+    filter: &[FilterToken],
     config: &LocateConfig,
     interrupt: &Option<Arc<AtomicBool>>,
     f: &mut F,
 ) -> Result<(), LocateError> {
     let mut reader = FileIndexReader::new(&volume_info.database)?;
-    let filter = filter::compile(&filter, config)?;
+    let filter = filter::compile(filter, config)?;
     loop {
         if interrupt
             .as_ref()
@@ -78,13 +77,13 @@ pub fn locate_volume<F: FnMut(LocateEvent) -> IOResult<()>>(
         {
             return Err(LocateError::Interrupted);
         }
-        match reader.next() {
+        match reader.next_entry() {
             Ok(Some((path, metadata))) => {
                 let bytes = path.as_os_str().as_bytes();
                 let text = String::from_utf8_lossy(bytes);
                 if filter::apply(&text, &filter) {
                     f(LocateEvent::Entry(path, &metadata))
-                        .map_err(|err| LocateError::WritingResultFailed(err))?;
+                        .map_err(LocateError::WritingResultFailed)?;
                 }
             }
             Ok(None) => return Ok(()),
@@ -128,7 +127,7 @@ impl FileIndexReader {
         })
     }
 
-    pub fn next(&mut self) -> Result<Option<(&Path, Metadata)>, LocateError> {
+    pub fn next_entry(&mut self) -> Result<Option<(&Path, Metadata)>, LocateError> {
         let discard = match self.reader.read_vu64() {
             Ok(val) => val,
             Err(err) => match err.kind() {

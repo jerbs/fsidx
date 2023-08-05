@@ -58,7 +58,7 @@ pub fn find_and_load() -> Result<Config, ConfigError> {
     }
     let config_file_path = Path::new("/etc/fsidx/fsidx.toml");
     if config_file_path.exists() {
-        return load_from_path(&config_file_path);
+        return load_from_path(config_file_path);
     }
     Err(ConfigError::ConfigFileNotFound)
 }
@@ -82,7 +82,7 @@ pub fn load_from_path(file_name: &Path) -> Result<Config, ConfigError> {
 }
 
 fn parse_content(contents: &str) -> Result<Config, toml::de::Error> {
-    let mut config: Config = toml::from_str(&contents)?;
+    let mut config: Config = toml::from_str(contents)?;
     resolve_leading_tilde(&mut config);
     Ok(config)
 }
@@ -93,9 +93,8 @@ fn resolve_leading_tilde(config: &mut Config) {
         let home = Path::new(&home);
         for folder in &mut config.index.folder {
             if folder.starts_with(tilde) {
-                match folder.strip_prefix(tilde) {
-                    Ok(f) => *folder = home.join(f),
-                    Err(_) => (),
+                if let Ok(path) = folder.strip_prefix(tilde) {
+                    *folder = home.join(path);
                 }
             }
         }
@@ -103,11 +102,8 @@ fn resolve_leading_tilde(config: &mut Config) {
 }
 
 fn set_db_path(config: &mut Config, config_file_path: &Path) {
-    if None == config.index.db_path {
-        config.index.db_path = match config_file_path.parent() {
-            Some(path) => Some(path.to_path_buf()),
-            None => None,
-        }
+    if config.index.db_path.is_none() {
+        config.index.db_path = config_file_path.parent().map(|path| path.to_path_buf())
     }
 }
 
@@ -128,7 +124,7 @@ pub fn get_volume_info(config: &Config) -> Option<Vec<VolumeInfo>> {
 pub fn get_db_file_path(config: &Config, folder: &Path) -> Option<PathBuf> {
     if let Some(db_path) = config.index.db_path.as_deref() {
         let s: &str = folder.to_str().unwrap();
-        let mut file_name = s.replace("/", "_");
+        let mut file_name = s.replace('/', "_");
         file_name.push_str(".fsdb");
         Some(db_path.join(Path::new(&file_name)))
     } else {

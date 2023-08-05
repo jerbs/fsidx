@@ -24,7 +24,7 @@ impl FindExt for &str {
                     let needle_ch = needle_next_ch;
                     if needle_ch == hey_ch {
                         // Found next character of needle:
-                        end = end + hey_ch_len;
+                        end += hey_ch_len;
                         if let Some(ch) = needle_it.next() {
                             needle_next_ch = ch;
                         } else {
@@ -38,7 +38,7 @@ impl FindExt for &str {
                         // Restart heystack iterator, but skip first character:
                         hey_it = self[start..].chars();
                         let hey_ch = hey_it.next().unwrap();
-                        start = start + hey_ch.len_utf8();
+                        start += hey_ch.len_utf8();
                         end = start;
                     }
                 } else {
@@ -65,9 +65,9 @@ impl FindExt for &str {
             'outer: loop {
                 if let Some(hey_ch) = hey_it.next() {
                     let hey_ch_len = hey_ch.len_utf8();
-                    end = end + hey_ch_len;
-                    let mut hey_ch_upper_it = hey_ch.to_uppercase();
-                    while let Some(hey_ch_upper) = hey_ch_upper_it.next() {
+                    end += hey_ch_len;
+                    let hey_ch_upper_it = hey_ch.to_uppercase();
+                    for hey_ch_upper in hey_ch_upper_it {
                         let needle_ch = needle_next_ch;
                         if needle_ch == hey_ch_upper {
                             // Found next character of needle:
@@ -84,7 +84,7 @@ impl FindExt for &str {
                             // Restart heystack iterator, but skip first character:
                             hey_it = self[start..].chars();
                             let hey_ch = hey_it.next().unwrap();
-                            start = start + hey_ch.len_utf8();
+                            start += hey_ch.len_utf8();
                             end = start;
                             continue 'outer;
                         }
@@ -113,13 +113,8 @@ impl FindExt for &str {
     fn skip_smart_space(&self, start: usize) -> usize {
         let mut it = self[start..].chars();
         let skip = if let Some(ch) = it.next() {
-            let len = ch.len_utf8();
-            if ch.is_whitespace() {
-                len
-            } else if ch == '-' {
-                len
-            } else if ch == '_' {
-                len
+            if ch.is_whitespace() || ch == '-' || ch == '_' {
+                ch.len_utf8()
             } else {
                 0
             }
@@ -131,12 +126,12 @@ impl FindExt for &str {
 
     fn tag_case_sensitive(&self, start: usize, pattern: &str) -> Option<Range<usize>> {
         let mut hey_it = self[start..].chars();
-        let mut needle_it = pattern.chars();
+        let needle_it = pattern.chars();
         let mut end = start;
-        while let Some(needle_ch) = needle_it.next() {
+        for needle_ch in needle_it {
             if let Some(hey_ch) = hey_it.next() {
                 if hey_ch == needle_ch {
-                    end = end + hey_ch.len_utf8();
+                    end += hey_ch.len_utf8();
                 } else {
                     return None;
                 }
@@ -154,9 +149,9 @@ impl FindExt for &str {
             let mut end = start;
             loop {
                 if let Some(hey_ch) = hey_it.next() {
-                    end = end + hey_ch.len_utf8();
-                    let mut hey_ch_upper_it = hey_ch.to_uppercase();
-                    while let Some(hey_ch_upper) = hey_ch_upper_it.next() {
+                    end += hey_ch.len_utf8();
+                    let hey_ch_upper_it = hey_ch.to_uppercase();
+                    for hey_ch_upper in hey_ch_upper_it {
                         if hey_ch_upper == needle_ch {
                             // Found next character of needle:
                             if let Some(ch) = needle_it.next() {
@@ -199,7 +194,7 @@ impl FindExt for &str {
             // Find start of previous character:
             previous = pos - 1;
             while !self.is_char_boundary(previous) {
-                previous = previous - 1;
+                previous -= 1;
             }
         };
 
@@ -207,18 +202,16 @@ impl FindExt for &str {
         let mut it = self[previous..].chars();
         let ch1 = it.next().unwrap();
         let mut ch1 = Features::new(ch1);
-        while let Some(ch2) = it.next() {
+        for ch2 in it {
             let ch2 = Features::new(ch2);
-            if !ch1.is_alphabetic && !ch1.is_numeric && (ch2.is_alphabetic || ch2.is_numeric) {
-                return Some(pos);
-            } else if ch1.is_numeric && ch2.is_alphabetic {
-                return Some(pos);
-            } else if ch1.is_alphabetic && ch2.is_numeric {
-                return Some(pos);
-            } else if ch1.is_lower && ch2.is_upper {
+            if (!ch1.is_alphabetic && !ch1.is_numeric && (ch2.is_alphabetic || ch2.is_numeric))
+                || (ch1.is_numeric && ch2.is_alphabetic)
+                || (ch1.is_alphabetic && ch2.is_numeric)
+                || (ch1.is_lower && ch2.is_upper)
+            {
                 return Some(pos);
             }
-            pos = pos + ch2.ch.len_utf8();
+            pos += ch2.ch.len_utf8();
             ch1 = ch2;
         }
         None
@@ -230,28 +223,23 @@ impl FindExt for &str {
         }
         let mut previous = start - 1;
         while !self.is_char_boundary(previous) {
-            previous = previous - 1;
+            previous -= 1;
         }
         let mut it = self[previous..].chars();
         let ch1 = it.next().unwrap();
-        if start == self.len() {
-            if ch1.is_alphanumeric() {
-                return true;
-            }
+        if start == self.len() && ch1.is_alphanumeric() {
+            return true;
         }
         let ch2 = it.next().unwrap();
         let ch1 = Features::new(ch1);
         let ch2 = Features::new(ch2);
-        if (ch1.is_alphabetic || ch1.is_numeric) && !ch2.is_alphabetic && !ch2.is_numeric {
-            true
-        } else if ch1.is_numeric && ch2.is_alphabetic {
-            true
-        } else if ch1.is_alphabetic && ch2.is_numeric {
-            true
-        } else if ch1.is_lower && ch2.is_upper {
+        if ((ch1.is_alphabetic || ch1.is_numeric) && !ch2.is_alphabetic && !ch2.is_numeric)
+            || (ch1.is_numeric && ch2.is_alphabetic)
+            || (ch1.is_alphabetic && ch2.is_numeric)
+        {
             true
         } else {
-            false
+            ch1.is_lower && ch2.is_upper
         }
     }
 }

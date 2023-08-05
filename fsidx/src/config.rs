@@ -50,26 +50,29 @@ fn default_literal_separator() -> bool {
     false
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub enum Order {
+    #[default]
     AnyOrder,
     SameOrder,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub enum What {
+    #[default]
     WholePath,
     LastElement,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub enum Mode {
+    #[default]
     Auto,
     Plain,
     Glob,
@@ -86,23 +89,5 @@ impl Default for LocateConfig {
             literal_separator: default_literal_separator(),
             mode: Mode::default(),
         }
-    }
-}
-
-impl Default for Order {
-    fn default() -> Self {
-        Order::AnyOrder
-    }
-}
-
-impl Default for What {
-    fn default() -> Self {
-        What::WholePath
-    }
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Auto
     }
 }

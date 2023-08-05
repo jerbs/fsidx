@@ -13,7 +13,7 @@ use rustyline::DefaultEditor;
 use signal_hook::consts::signal::SIGINT;
 use signal_hook::iterator::Signals;
 use std::env::Args;
-use std::io::{stderr, stdout, Error, Result as IOResult, Write};
+use std::io::{stderr, stdout, Result as IOResult, Write};
 use std::os::unix::prelude::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -32,9 +32,9 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
     if let Some(arg) = args.next() {
         return Err(CliError::InvalidShellArgument(arg));
     }
-    set_tty().map_err(|err: Error| CliError::TtyConfigurationFailed(err))?;
+    set_tty().map_err(CliError::TtyConfigurationFailed)?;
     let interrupt = Arc::new(AtomicBool::new(false));
-    let mut signals = Signals::new(&[SIGINT]) // Ctrl-C
+    let mut signals = Signals::new([SIGINT]) // Ctrl-C
         .map_err(CliError::CreatingSignalHandlerFailed)?;
     let interrupt_for_signal_handler = interrupt.clone();
     std::thread::spawn(move || {
@@ -148,12 +148,10 @@ fn process_shell_line(
             return Ok(ShellAction::None);
         }
         // Open commands:
-        if match command.parse::<OpenRule>() {
-            Ok(OpenRule::Index(_)) => true,
-            Ok(OpenRule::IndexRange(_, _)) => true,
-            Ok(OpenRule::IndexGlob(_, _)) => true,
-            _ => false,
-        } {
+        if matches!(
+            command.parse::<OpenRule>(),
+            Ok(OpenRule::Index(_)) | Ok(OpenRule::IndexRange(_, _)) | Ok(OpenRule::IndexGlob(_, _))
+        ) {
             open_command(config, &token, selection)?;
             return Ok(ShellAction::None);
         }
@@ -206,20 +204,18 @@ fn open_append(
     if path.exists() {
         command.arg(path);
         *found = true;
-        stdout().write(b"Opening: '")?;
-        stdout().write(path.as_os_str().as_bytes())?;
-        stdout().write(b"'\n")?;
+        stdout().write_all(b"Opening: '")?;
+        stdout().write_all(path.as_os_str().as_bytes())?;
+        stdout().write_all(b"'\n")?;
     } else {
         print_error();
         stderr().write_all(b"'")?;
         stderr().write_all(path.as_os_str().as_bytes())?;
         stderr().write_all(b"' not exists.")?;
         for base in &config.index.folder {
-            if path.starts_with(base) {
-                if !base.exists() {
-                    stderr().write_all(b" Device not mounted.")?;
-                    break;
-                }
+            if path.starts_with(base) && !base.exists() {
+                stderr().write_all(b" Device not mounted.")?;
+                break;
             }
         }
         stderr().write_all(b"\n")?;

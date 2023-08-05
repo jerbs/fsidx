@@ -9,6 +9,7 @@ use std::env::{args, Args};
 use std::io::{stdout, Error, Write};
 use std::path::PathBuf;
 
+#[derive(Default)]
 struct MainOptions {
     config_file: Option<PathBuf>,
     help: bool,
@@ -118,17 +119,6 @@ impl From<Error> for CliError {
     }
 }
 
-impl Default for MainOptions {
-    fn default() -> Self {
-        Self {
-            config_file: None,
-            help: false,
-            verbose: 0,
-            version: false,
-        }
-    }
-}
-
 pub fn main() -> i32 {
     if let Err(err) = process_main_command() {
         crate::shell::print_error();
@@ -233,9 +223,5 @@ impl MainOptions {
 }
 
 fn get_path_buf(args: &mut Args) -> Option<PathBuf> {
-    if let Some(text) = args.next() {
-        Some(PathBuf::from(text))
-    } else {
-        None
-    }
+    args.next().map(PathBuf::from)
 }

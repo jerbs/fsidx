@@ -50,7 +50,7 @@ fn locate_impl<F: FnMut(LocateEvent) -> IOResult<()>>(
     interrupt: Option<Arc<AtomicBool>>,
     f: F,
 ) -> Result<(), CliError> {
-    let volume_info = get_volume_info(&config).ok_or(CliError::NoDatabasePath)?;
+    let volume_info = get_volume_info(config).ok_or(CliError::NoDatabasePath)?;
     match fsidx::locate(volume_info, filter_token, &config.locate, interrupt, f) {
         Ok(_) => Ok(()),
         Err(fsidx::LocateError::BrokenPipe) => Ok(()), // No error for: fsidx | head -n 5
@@ -94,15 +94,10 @@ fn print_size(stdout: &mut StandardStream, size: u64) -> IOResult<()> {
     let bytes = text.bytes();
     let len = bytes.len();
     for (i, ch) in bytes.into_iter().enumerate() {
-        if i > 0 {
-            match (len - i) % 3 {
-                0 => {
-                    stdout.write_all(b".")?;
-                }
-                _ => {}
-            }
+        if i > 0 && (len - i) % 3 == 0 {
+            stdout.write_all(b".")?;
         }
-        stdout.write(&[ch])?;
+        stdout.write_all(&[ch])?;
     }
     Ok(())
 }
@@ -124,7 +119,7 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateEvent) -> IOResu
         }
         LocateEvent::Finished => {}
         LocateEvent::Interrupted => {
-            stdout.write(b"CTRL-C\n")?;
+            stdout.write_all(b"CTRL-C\n")?;
         }
         LocateEvent::Searching(path) => {
             if verbosity() {

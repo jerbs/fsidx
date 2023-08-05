@@ -81,7 +81,7 @@ fn update_volume(volume_info: VolumeInfo, settings: Settings, tx: &Sender<Msg>) 
         volume_info.folder.display()
     )));
 
-    if let Err(err) = update_volume_impl(&volume_info, settings, &tx) {
+    if let Err(err) = update_volume_impl(&volume_info, settings, tx) {
         let _ = tx.send(Msg::Error(format!("Error: {}", err)));
         let _ = tx.send(Msg::Error(format!(
             "Scanning failed: {}",
@@ -105,11 +105,11 @@ fn update_volume_impl(
     tmp_file_name.set_extension("~");
 
     let mut file = File::create(&tmp_file_name)?;
-    let result = scan_folder(&mut file, &volume_info.folder, settings, &tx);
+    let result = scan_folder(&mut file, &volume_info.folder, settings, tx);
     drop(file); // close file
 
     match result {
-        Ok(_) => fs::rename(&tmp_file_name, &db_file_name)?,
+        Ok(_) => fs::rename(&tmp_file_name, db_file_name)?,
         Err(_) => fs::remove_file(&tmp_file_name)?,
     }
 
@@ -141,7 +141,7 @@ fn scan_folder(
 
                 writer.write_vu64(discard as u64)?;
                 writer.write_vu64(delta.len() as u64)?;
-                writer.write_all(&delta)?;
+                writer.write_all(delta)?;
 
                 if settings == Settings::WithFileSizes {
                     let size_plus_one = if let Ok(metadata) = entry.metadata() {
@@ -205,7 +205,7 @@ fn delta_encode<'a>(a: &'a [u8], b: &'a [u8]) -> (usize, &'a [u8]) {
         if a != b {
             break;
         }
-        idx = idx + 1;
+        idx += 1;
     }
     let discard = a.len() - idx;
     let delta: &[u8] = &b[idx..];
