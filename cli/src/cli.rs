@@ -38,6 +38,7 @@ pub(crate) enum CliError {
     GlobPatternError(String, globset::Error),
     InvalidOpenIndex(usize),
     NotImplementedForNonUtf8Path(PathBuf),
+    ReadlineError(String),
 }
 
 impl std::fmt::Display for CliError {
@@ -62,6 +63,7 @@ impl std::fmt::Display for CliError {
             CliError::GlobPatternError(glob, err) => f.write_fmt(format_args!("Glob '{}' is invalid: {}", glob, err)),
             CliError::InvalidOpenIndex(idx) => f.write_fmt(format_args!("Invalid open index: {}", idx)),
             CliError::NotImplementedForNonUtf8Path(path) => f.write_fmt(format_args!("Not implemented for a non-UTF8 path: {}", path.to_string_lossy())),
+            CliError::ReadlineError(err) => f.write_fmt(format_args!("Readline failed: {}", err))
         }
     }
 }

@@ -1,6 +1,6 @@
 use fsidx::LocateError;
 use rustyline::error::ReadlineError;
-use rustyline::Editor;
+use rustyline::DefaultEditor;
 use signal_hook::iterator::Signals;
 use signal_hook::consts::signal::SIGINT;
 use std::os::unix::prelude::OsStrExt;
@@ -21,6 +21,12 @@ use crate::tty::set_tty;
 use crate::update::update_shell;
 use crate::verbosity::verbosity;
 
+impl From<ReadlineError> for CliError {
+    fn from(err: ReadlineError) -> Self {
+        let description = err.to_string();
+        CliError::ReadlineError(description)
+    }
+}
 
 pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
     if let Some(arg) = args.next() {
@@ -43,11 +49,11 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
             }
         }
     });
-    let mut rl = Editor::<()>::new();
+    let mut rl = DefaultEditor::new()?;
     let history = if let Some(db_path) = &config.index.db_path {
         let history = Path::new(&db_path).join("history.txt");
         if let Err(err) = rl.load_history(&history) {
-            if matches!(err, ReadlineError::Errno(nix::errno::Errno::ENOENT)) {
+            if matches!(err, ReadlineError::Errno(nix::Error::ENOENT)) {
                 print_error();
                 eprintln!("Reading '{}' failed: {}", history.display(), err);
             }
@@ -62,7 +68,7 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
         let readline = rl.readline("> ");
         match readline {
             Ok(line) => {
-                rl.add_history_entry(line.as_str());
+                rl.add_history_entry(line.as_str())?;
                 interrupt.store(false, Ordering::Relaxed);
                 match process_shell_line(&config, &line, interrupt.clone(), &selection) {
                     Ok(ShellAction::Found(s)) => {
