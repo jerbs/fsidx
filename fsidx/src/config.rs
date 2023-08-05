@@ -1,6 +1,6 @@
 use num_enum::TryFromPrimitive;
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct VolumeInfo {

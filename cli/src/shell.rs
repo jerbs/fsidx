@@ -1,25 +1,25 @@
-use fsidx::LocateError;
-use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
-use signal_hook::iterator::Signals;
-use signal_hook::consts::signal::SIGINT;
-use std::os::unix::prelude::OsStrExt;
-use std::process::Command;
-use std::env::Args;
-use std::io::{Error, Result as IOResult, stdout, stderr, Write};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use crate::cli::CliError;
 use crate::config::Config;
 use crate::expand::{Expand, OpenRule};
 use crate::help::{help_shell, help_shell_short};
 use crate::locate::locate_shell;
-use crate::tokenizer::{Token, tokenize_shell};
+use crate::tokenizer::{tokenize_shell, Token};
 use crate::tty::set_tty;
 use crate::update::update_shell;
 use crate::verbosity::verbosity;
+use fsidx::LocateError;
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
+use signal_hook::consts::signal::SIGINT;
+use signal_hook::iterator::Signals;
+use std::env::Args;
+use std::io::{stderr, stdout, Error, Result as IOResult, Write};
+use std::os::unix::prelude::OsStrExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
 impl From<ReadlineError> for CliError {
     fn from(err: ReadlineError) -> Self {
@@ -31,11 +31,10 @@ impl From<ReadlineError> for CliError {
 pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
     if let Some(arg) = args.next() {
         return Err(CliError::InvalidShellArgument(arg));
-    } 
-    set_tty()
-        .map_err(|err: Error| CliError::TtyConfigurationFailed(err))?;
+    }
+    set_tty().map_err(|err: Error| CliError::TtyConfigurationFailed(err))?;
     let interrupt = Arc::new(AtomicBool::new(false));
-    let mut signals = Signals::new(&[SIGINT])   // Ctrl-C
+    let mut signals = Signals::new(&[SIGINT]) // Ctrl-C
         .map_err(CliError::CreatingSignalHandlerFailed)?;
     let interrupt_for_signal_handler = interrupt.clone();
     std::thread::spawn(move || {
@@ -75,35 +74,35 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
                         if !s.is_empty() {
                             selection = Some(s);
                         }
-                    },
+                    }
                     Ok(ShellAction::Quit) => {
                         // Don't store \q in history.
                         break;
-                    },
-                    Ok(ShellAction::None) => {
-                    },
+                    }
+                    Ok(ShellAction::None) => {}
                     Err(CliError::LocateError(LocateError::Interrupted)) => {
                         println!("CTRL-C");
-                    },
-                    Err(CliError::LocateError(LocateError::BrokenPipe))  => {
+                    }
+                    Err(CliError::LocateError(LocateError::BrokenPipe)) => {
                         println!("EOF");
-                    },
+                    }
                     Err(err) => {
-                        print_error(); eprintln!("{}", err);
-                    },
+                        print_error();
+                        eprintln!("{}", err);
+                    }
                 };
-            },
+            }
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");
-            },
+            }
             Err(ReadlineError::Eof) => {
                 println!("CTRL-D");
-                break
-            },
+                break;
+            }
             Err(err) => {
                 print_error();
                 eprintln!("{}", err);
-                break
+                break;
             }
         }
         if let Some(history) = &history {
@@ -119,17 +118,32 @@ enum ShellAction {
     Quit,
 }
 
-fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, selection: &Option<Vec<PathBuf>>) -> Result<ShellAction, CliError> {
+fn process_shell_line(
+    config: &Config,
+    line: &str,
+    interrupt: Arc<AtomicBool>,
+    selection: &Option<Vec<PathBuf>>,
+) -> Result<ShellAction, CliError> {
     let token = tokenize_shell(line)?;
     if let Some(Token::Text(command)) = token.first() {
         // Backslash commands:
         if command.starts_with('\\') {
             match command.as_str() {
-                "\\q" if token.len() == 1 => { return Ok(ShellAction::Quit); },
-                "\\o" => { open_command(config, &token[1..], selection)?; },
-                "\\u" if token.len() == 1 => { update_shell(config)?; },
-                "\\h" => { let _ = help_shell(); },
-                _ => { let _ = help_shell_short(); },
+                "\\q" if token.len() == 1 => {
+                    return Ok(ShellAction::Quit);
+                }
+                "\\o" => {
+                    open_command(config, &token[1..], selection)?;
+                }
+                "\\u" if token.len() == 1 => {
+                    update_shell(config)?;
+                }
+                "\\h" => {
+                    let _ = help_shell();
+                }
+                _ => {
+                    let _ = help_shell_short();
+                }
             };
             return Ok(ShellAction::None);
         }
@@ -145,17 +159,17 @@ fn process_shell_line(config: &Config, line: &str, interrupt: Arc<AtomicBool>, s
         }
     }
     // Locate query:
-    match locate_shell(
-        config,
-        line,
-        Some(interrupt)
-    ) {
+    match locate_shell(config, line, Some(interrupt)) {
         Ok(paths) => Ok(ShellAction::Found(paths)),
         Err(err) => Err(err),
     }
 }
 
-fn open_command(config: &Config, token: &[Token], selection: &Option<Vec<PathBuf>>) -> Result<(), CliError> {
+fn open_command(
+    config: &Config,
+    token: &[Token],
+    selection: &Option<Vec<PathBuf>>,
+) -> Result<(), CliError> {
     if let Some(selection) = selection {
         let mut command = Command::new("open");
         let mut found = false;
@@ -164,12 +178,13 @@ fn open_command(config: &Config, token: &[Token], selection: &Option<Vec<PathBuf
                 crate::tokenizer::Token::Text(text) => {
                     if let Ok(open_rule) = text.parse::<OpenRule>() {
                         let expand = Expand::new(open_rule, selection);
-                        expand.foreach(|path| open_append(&mut command, path, &mut found, config))?;
+                        expand
+                            .foreach(|path| open_append(&mut command, path, &mut found, config))?;
                     } else {
                         return Err(CliError::InvalidOpenRule(text.clone()));
                     }
-                },
-                crate::tokenizer::Token::Option(_) => {},   // TODO: Implement options to configure glob expansion.
+                }
+                crate::tokenizer::Token::Option(_) => {} // TODO: Implement options to configure glob expansion.
             };
         }
         if found {
@@ -182,15 +197,19 @@ fn open_command(config: &Config, token: &[Token], selection: &Option<Vec<PathBuf
     Ok(())
 }
 
-fn open_append(command: &mut Command, path: &Path, found: &mut bool, config: &Config) -> Result<(), CliError> {
+fn open_append(
+    command: &mut Command,
+    path: &Path,
+    found: &mut bool,
+    config: &Config,
+) -> Result<(), CliError> {
     if path.exists() {
         command.arg(path);
         *found = true;
         stdout().write(b"Opening: '")?;
         stdout().write(path.as_os_str().as_bytes())?;
         stdout().write(b"'\n")?;
-    }
-    else {
+    } else {
         print_error();
         stderr().write_all(b"'")?;
         stderr().write_all(path.as_os_str().as_bytes())?;
@@ -198,7 +217,7 @@ fn open_append(command: &mut Command, path: &Path, found: &mut bool, config: &Co
         for base in &config.index.folder {
             if path.starts_with(base) {
                 if !base.exists() {
-                    stderr().write_all( b" Device not mounted.")?;
+                    stderr().write_all(b" Device not mounted.")?;
                     break;
                 }
             }
@@ -209,7 +228,6 @@ fn open_append(command: &mut Command, path: &Path, found: &mut bool, config: &Co
 }
 
 fn open_spawn(command: &mut Command) -> IOResult<()> {
-
     let mut child = command.spawn()?;
     let exit_status = child.wait()?;
     if !exit_status.success() {

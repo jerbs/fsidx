@@ -6,5 +6,7 @@ pub fn verbosity() -> bool {
 }
 
 pub fn set_verbosity(v: u8) {
-    unsafe { VERBOSITY_LEVEL = v; }
+    unsafe {
+        VERBOSITY_LEVEL = v;
+    }
 }

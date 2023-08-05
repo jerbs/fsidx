@@ -1,5 +1,5 @@
-use std::env::Args;
 use crate::cli::CliError;
+use std::env::Args;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -40,7 +40,7 @@ pub(crate) fn tokenize_shell(line: &str) -> Result<Vec<Token>, CliError> {
     // Getting the all subcommand arguments as a single string here.
     let mut token: Vec<Token> = Vec::new();
     let mut item = String::new();
-    let mut quoted = false;            // Backslash quoting is done inside quotes
+    let mut quoted = false; // Backslash quoting is done inside quotes
     let mut escaped = false;
     let mut short_option = false;
     let mut long_option = false;
@@ -49,29 +49,32 @@ pub(crate) fn tokenize_shell(line: &str) -> Result<Vec<Token>, CliError> {
             if escaped {
                 escaped = false;
                 match ch {
-                    '"' => {item.push('"')},
-                    't' => {item.push('\t')},
-                    'n' => {item.push('\n')},
-                    'r' => {item.push('\r')},
-                    '\\' => {item.push('\\')},
-                    ch => {return Err(CliError::InvalidEscape(ch));}
+                    '"' => item.push('"'),
+                    't' => item.push('\t'),
+                    'n' => item.push('\n'),
+                    'r' => item.push('\r'),
+                    '\\' => item.push('\\'),
+                    ch => {
+                        return Err(CliError::InvalidEscape(ch));
+                    }
                 };
             } else {
                 match ch {
                     '\\' => {
                         escaped = true;
-                    },
-                    '"'  => {
+                    }
+                    '"' => {
                         // Do not yet add to tokens.
                         // Item may be continued.
                         quoted = false;
-                    },
-                    ch   => {
+                    }
+                    ch => {
                         item.push(ch);
                     }
                 }
             }
-        } else {  // not quoted
+        } else {
+            // not quoted
             match ch {
                 ' ' | '\t' | '\n' | '\r' => {
                     if long_option {
@@ -95,15 +98,15 @@ pub(crate) fn tokenize_shell(line: &str) -> Result<Vec<Token>, CliError> {
                     } else {
                         token.push(Token::Text(swap(&mut item)));
                     };
-                },
+                }
                 '-' if item.len() == 0 => {
                     if short_option {
                         long_option = true;
                         short_option = false;
                     } else {
                         short_option = true;
-                    }; 
-                },
+                    };
+                }
                 '"' => {
                     quoted = true;
                 }
@@ -319,9 +322,7 @@ mod tests {
     fn just_a_dash() {
         assert_eq!(
             tokenize_shell(r#"-"#).unwrap(),
-            vec!(
-                Token::Text("-".to_string()),
-            )
+            vec!(Token::Text("-".to_string()),)
         );
     }
 
@@ -329,28 +330,20 @@ mod tests {
     fn just_dash_dash() {
         assert_eq!(
             tokenize_shell(r#"--"#).unwrap(),
-            vec!(
-                Token::Text("--".to_string()),
-            )
+            vec!(Token::Text("--".to_string()),)
         );
     }
 
-
     #[test]
     fn empty() {
-        assert_eq!(
-            tokenize_shell(r#""#).unwrap(),
-            vec!()
-        );
+        assert_eq!(tokenize_shell(r#""#).unwrap(), vec!());
     }
 
     #[test]
     fn trailing_space() {
         assert_eq!(
             tokenize_shell(r#"foo "#).unwrap(),
-            vec!(
-                Token::Text("foo".to_string()),
-            )
+            vec!(Token::Text("foo".to_string()),)
         );
     }
 
@@ -360,9 +353,7 @@ mod tests {
         println!("{:?}", xxx);
         assert_eq!(
             tokenize_shell(r#" foo"#).unwrap(),
-            vec!(
-                Token::Text("foo".to_string()),
-            )
+            vec!(Token::Text("foo".to_string()),)
         );
     }
 

@@ -1,15 +1,15 @@
+use super::{Settings, VolumeInfo};
 use core::cmp::Ordering;
 use fastvlq::WriteVu64Ext;
+use nix::sys::stat::stat;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{Error, ErrorKind, Result, Write};
-use std::path::{Path};
+use std::path::Path;
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{self};
-use nix::sys::stat::stat;
-use walkdir::{WalkDir};
-use super::{Settings, VolumeInfo};
+use walkdir::WalkDir;
 
 type GroupedVolumes = Vec<Vec<VolumeInfo>>;
 
@@ -20,14 +20,13 @@ pub struct UpdateSink<'a> {
 
 enum Msg {
     Info(String),
-    Error(String)
+    Error(String),
 }
-
 
 pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings, sink: UpdateSink) {
     let grouped = group_volumes(volume_info);
     let mut handles = vec![];
-    let(tx, rx) = channel();
+    let (tx, rx) = channel();
     for group in grouped {
         let settings = settings.clone();
         let tx = tx.clone();
@@ -40,34 +39,34 @@ pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings, sink: UpdateSink
     loop {
         let recv = rx.recv();
         match recv {
-            Ok(Msg::Info(text)) => {let _ = writeln!(sink.stdout, "{}", text);},
-            Ok(Msg::Error(text)) => {let _ = writeln!(sink.stderr, "Error: {}", text);},
-            Err(_) => {break;},
+            Ok(Msg::Info(text)) => {
+                let _ = writeln!(sink.stdout, "{}", text);
+            }
+            Ok(Msg::Error(text)) => {
+                let _ = writeln!(sink.stderr, "Error: {}", text);
+            }
+            Err(_) => {
+                break;
+            }
         };
     }
     for handle in handles {
         handle.join().expect("join failed");
     }
-} 
+}
 
 fn group_volumes(volume_info: Vec<VolumeInfo>) -> GroupedVolumes {
-    let mut map = BTreeMap::<i32, Vec::<VolumeInfo>>::new();
+    let mut map = BTreeMap::<i32, Vec<VolumeInfo>>::new();
 
     for vi in volume_info {
         let st = stat(&vi.folder);
         if let Ok(f_stat) = st {
             let dev = f_stat.st_dev;
-            map
-            .entry(dev)
-            .or_default()
-            .push(vi);
+            map.entry(dev).or_default().push(vi);
         }
     }
 
-    map
-    .values()
-    .cloned()
-    .collect()
+    map.values().cloned().collect()
 }
 
 fn update_volume_group(group: Vec<VolumeInfo>, settings: Settings, tx: Sender<Msg>) {
@@ -77,26 +76,38 @@ fn update_volume_group(group: Vec<VolumeInfo>, settings: Settings, tx: Sender<Ms
 }
 
 fn update_volume(volume_info: VolumeInfo, settings: Settings, tx: &Sender<Msg>) {
-    let _ = tx.send(Msg::Info(format!("Scanning: {}", volume_info.folder.display())));
-    
+    let _ = tx.send(Msg::Info(format!(
+        "Scanning: {}",
+        volume_info.folder.display()
+    )));
+
     if let Err(err) = update_volume_impl(&volume_info, settings, &tx) {
         let _ = tx.send(Msg::Error(format!("Error: {}", err)));
-        let _ = tx.send(Msg::Error(format!("Scanning failed: {}", volume_info.folder.display())));
+        let _ = tx.send(Msg::Error(format!(
+            "Scanning failed: {}",
+            volume_info.folder.display()
+        )));
     } else {
-        let _ = tx.send(Msg::Info(format!("Finished: {}", volume_info.folder.display())));
+        let _ = tx.send(Msg::Info(format!(
+            "Finished: {}",
+            volume_info.folder.display()
+        )));
     }
 }
 
-fn update_volume_impl(volume_info: &VolumeInfo, settings: Settings, tx: &Sender<Msg>) -> Result<()> {
+fn update_volume_impl(
+    volume_info: &VolumeInfo,
+    settings: Settings,
+    tx: &Sender<Msg>,
+) -> Result<()> {
     let db_file_name = &volume_info.database;
     let mut tmp_file_name = db_file_name.clone();
     tmp_file_name.set_extension("~");
 
-
     let mut file = File::create(&tmp_file_name)?;
     let result = scan_folder(&mut file, &volume_info.folder, settings, &tx);
-    drop(file);    // close file
-    
+    drop(file); // close file
+
     match result {
         Ok(_) => fs::rename(&tmp_file_name, &db_file_name)?,
         Err(_) => fs::remove_file(&tmp_file_name)?,
@@ -105,8 +116,13 @@ fn update_volume_impl(volume_info: &VolumeInfo, settings: Settings, tx: &Sender<
     result
 }
 
-fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings, tx: &Sender<Msg>) -> Result<()> {
-    let flags: &[u8] = &[settings.clone() as u8]; 
+fn scan_folder(
+    mut writer: &mut dyn Write,
+    folder: &Path,
+    settings: Settings,
+    tx: &Sender<Msg>,
+) -> Result<()> {
+    let flags: &[u8] = &[settings.clone() as u8];
 
     // The written file should be removed when this function returns an Err.
     // Either the device was not mounted (ErrorKind::NotFound) or writing the
@@ -114,8 +130,7 @@ fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings, tx
     writer.write_all("fsix".as_bytes())?;
     writer.write_all(flags)?;
     let mut previous: Vec<u8> = Vec::new();
-    for entry in WalkDir::new(folder)
-    .sort_by(|a,b| compare(a.file_name(), b.file_name())) {
+    for entry in WalkDir::new(folder).sort_by(|a, b| compare(a.file_name(), b.file_name())) {
         match entry {
             Ok(entry) => {
                 let bytes = byte_slice(entry.path());
@@ -138,7 +153,7 @@ fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings, tx
                 }
 
                 previous = bytes.to_vec();
-            },
+            }
             Err(error) => {
                 let depth = error.depth();
                 if let Some(io_error) = error.io_error() {
@@ -153,12 +168,19 @@ fn scan_folder(mut writer: &mut dyn Write, folder: &Path, settings: Settings, tx
                         //       name with non ascii characters.
                     }
                 }
-                match error.path()
-                {
-                    Some(path) => { let _ = tx.send(Msg::Error(format!("Error: {} on path {}", error, path.display()))); },
-                    None => { let _ = tx.send(Msg::Error(format!("Error: {}", error))); },
+                match error.path() {
+                    Some(path) => {
+                        let _ = tx.send(Msg::Error(format!(
+                            "Error: {} on path {}",
+                            error,
+                            path.display()
+                        )));
+                    }
+                    None => {
+                        let _ = tx.send(Msg::Error(format!("Error: {}", error)));
+                    }
                 }
-            },
+            }
         }
     }
     Ok(())
@@ -171,13 +193,13 @@ fn compare(a: &OsStr, b: &OsStr) -> Ordering {
 }
 
 fn byte_slice(path: &Path) -> &[u8] {
-    use std::os::unix::ffi::OsStrExt;           // Import OsStrExt trait for OsStr to get as_bytes()
+    use std::os::unix::ffi::OsStrExt; // Import OsStrExt trait for OsStr to get as_bytes()
     let os_str = path.as_os_str();
-    let bytes: &[u8] = os_str.as_bytes();       // as_bytes() is Unix specific
+    let bytes: &[u8] = os_str.as_bytes(); // as_bytes() is Unix specific
     bytes
 }
 
-fn delta_encode<'a>(a: &'a[u8], b: &'a[u8]) -> (usize, &'a[u8]) {
+fn delta_encode<'a>(a: &'a [u8], b: &'a [u8]) -> (usize, &'a [u8]) {
     let mut idx: usize = 0;
     for (a, b) in a.iter().zip(b.iter()) {
         if a != b {
@@ -197,13 +219,28 @@ mod tests {
 
     #[test]
     fn test_compare() {
-        assert_eq!(compare(&OsString::from("foo"), &OsString::from("foo")), Ordering::Equal);
-        assert_eq!(compare(&OsString::from("foo2"), &OsString::from("foo10")), Ordering::Less);
+        assert_eq!(
+            compare(&OsString::from("foo"), &OsString::from("foo")),
+            Ordering::Equal
+        );
+        assert_eq!(
+            compare(&OsString::from("foo2"), &OsString::from("foo10")),
+            Ordering::Less
+        );
         // lexical_sort::natural_lexical_cmp panicks with these large numbers:
-        assert_eq!(compare(&OsString::from("foo123456789012345678901234"),
-                           &OsString::from("foo123456789012345678901234")), Ordering::Equal);
-        assert_eq!(compare(&OsString::from( "foo23456789012345678901234"),
-                           &OsString::from("foo123456789012345678901234")), Ordering::Less);
+        assert_eq!(
+            compare(
+                &OsString::from("foo123456789012345678901234"),
+                &OsString::from("foo123456789012345678901234")
+            ),
+            Ordering::Equal
+        );
+        assert_eq!(
+            compare(
+                &OsString::from("foo23456789012345678901234"),
+                &OsString::from("foo123456789012345678901234")
+            ),
+            Ordering::Less
+        );
     }
-
 }

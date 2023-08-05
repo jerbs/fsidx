@@ -1,9 +1,8 @@
-use std::env::Args;
-use fsidx::{Settings, UpdateSink};
-use std::io::{stdout, stderr};
 use crate::cli::CliError;
-use crate::config::{Config, get_volume_info};
-
+use crate::config::{get_volume_info, Config};
+use fsidx::{Settings, UpdateSink};
+use std::env::Args;
+use std::io::{stderr, stdout};
 
 pub(crate) fn update_cli(config: &Config, args: &mut Args) -> Result<(), CliError> {
     if let Some(arg) = args.next() {
@@ -13,8 +12,7 @@ pub(crate) fn update_cli(config: &Config, args: &mut Args) -> Result<(), CliErro
 }
 
 pub(crate) fn update_shell(config: &Config) -> Result<(), CliError> {
-    let volume_info = get_volume_info(&config)
-    .ok_or(CliError::NoDatabasePath)?;
+    let volume_info = get_volume_info(&config).ok_or(CliError::NoDatabasePath)?;
     let sink = UpdateSink {
         stdout: &mut stdout(),
         stderr: &mut stderr(),

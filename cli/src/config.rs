@@ -1,8 +1,8 @@
+use fsidx::{LocateConfig, VolumeInfo};
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use serde::{Deserialize, Serialize};
-use fsidx::{LocateConfig, VolumeInfo};
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
@@ -29,13 +29,24 @@ pub enum ConfigError {
 impl std::fmt::Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConfigError::FileReadError(path, err) => f.write_fmt(format_args!("Reading '{}' failed: {}", path.to_string_lossy(), err)),
-            ConfigError::ParseError(path, err) => f.write_fmt(format_args!("Parsing '{}' failed: {}", path.to_string_lossy(), err)),
-            ConfigError::TomlFileExpected(path) => f.write_fmt(format_args!("Expected a toml file instead of: '{}'", path.to_string_lossy())),
+            ConfigError::FileReadError(path, err) => f.write_fmt(format_args!(
+                "Reading '{}' failed: {}",
+                path.to_string_lossy(),
+                err
+            )),
+            ConfigError::ParseError(path, err) => f.write_fmt(format_args!(
+                "Parsing '{}' failed: {}",
+                path.to_string_lossy(),
+                err
+            )),
+            ConfigError::TomlFileExpected(path) => f.write_fmt(format_args!(
+                "Expected a toml file instead of: '{}'",
+                path.to_string_lossy()
+            )),
             ConfigError::ConfigFileNotFound => f.write_str("Configuration file not found."),
         }
     }
-} 
+}
 
 pub fn find_and_load() -> Result<Config, ConfigError> {
     if let Ok(home) = env::var("HOME") {
@@ -51,28 +62,29 @@ pub fn find_and_load() -> Result<Config, ConfigError> {
     }
     Err(ConfigError::ConfigFileNotFound)
 }
-    
+
 pub fn load_from_path(file_name: &Path) -> Result<Config, ConfigError> {
     if file_name
         .extension()
-        .ok_or(ConfigError::TomlFileExpected(file_name.to_owned(),))?
+        .ok_or(ConfigError::TomlFileExpected(file_name.to_owned()))?
         .to_str()
-        .ok_or(ConfigError::TomlFileExpected(file_name.to_owned(),))? != "toml"
+        .ok_or(ConfigError::TomlFileExpected(file_name.to_owned()))?
+        != "toml"
     {
-        return Err(ConfigError::TomlFileExpected(file_name.to_owned(),));
+        return Err(ConfigError::TomlFileExpected(file_name.to_owned()));
     };
     let contents = fs::read_to_string(file_name)
         .map_err(|err: std::io::Error| ConfigError::FileReadError(file_name.to_owned(), err))?;
     let mut config = parse_content(&contents)
         .map_err(|err| ConfigError::ParseError(file_name.to_owned(), err))?;
     set_db_path(&mut config, file_name);
-    Ok( config )
+    Ok(config)
 }
 
 fn parse_content(contents: &str) -> Result<Config, toml::de::Error> {
     let mut config: Config = toml::from_str(&contents)?;
     resolve_leading_tilde(&mut config);
-    Ok( config )
+    Ok(config)
 }
 
 fn resolve_leading_tilde(config: &mut Config) {
@@ -94,20 +106,22 @@ fn set_db_path(config: &mut Config, config_file_path: &Path) {
     if None == config.index.db_path {
         config.index.db_path = match config_file_path.parent() {
             Some(path) => Some(path.to_path_buf()),
-            None => None
+            None => None,
         }
     }
 }
 
-pub fn get_volume_info(config: &Config) -> Option<Vec<VolumeInfo> > {
-    let volume_info = config.index.folder
-    .iter()
-    .filter_map(|folder| {
-        let database = get_db_file_path(config, folder)?;
-        let folder = folder.clone();
-        Some(VolumeInfo { folder, database })
-    })
-    .collect();
+pub fn get_volume_info(config: &Config) -> Option<Vec<VolumeInfo>> {
+    let volume_info = config
+        .index
+        .folder
+        .iter()
+        .filter_map(|folder| {
+            let database = get_db_file_path(config, folder)?;
+            let folder = folder.clone();
+            Some(VolumeInfo { folder, database })
+        })
+        .collect();
     Some(volume_info)
 }
 
@@ -125,15 +139,15 @@ pub fn get_db_file_path(config: &Config, folder: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indoc::indoc;
     use fsidx::{Mode, Order, What};
-    
+    use indoc::indoc;
+
     #[test]
     fn toml_parsing() {
         let home = env::var("HOME").unwrap();
 
         let data = indoc! {
-         r#"[index]
+        r#"[index]
             folder = [
                 "~/Music",
                 "/Volumes/Music"
@@ -155,7 +169,8 @@ mod tests {
                 index: Index {
                     folder: vec![
                         PathBuf::from(format!("{}/Music", home)),
-                        PathBuf::from("/Volumes/Music")],
+                        PathBuf::from("/Volumes/Music")
+                    ],
                     db_path: None
                 },
                 locate: LocateConfig {
@@ -167,17 +182,16 @@ mod tests {
                     literal_separator: false,
                     mode: Mode::Auto,
                 },
-            });
+            }
+        );
     }
 
     #[test]
     fn encode_toml() {
         let config = Config {
             index: Index {
-                folder: vec![
-                    PathBuf::from("~/Music"),
-                    PathBuf::from("/Volumes/Music")],
-                db_path: None
+                folder: vec![PathBuf::from("~/Music"), PathBuf::from("/Volumes/Music")],
+                db_path: None,
             },
             locate: LocateConfig {
                 case_sensitive: true,
@@ -191,7 +205,7 @@ mod tests {
         };
         let toml = toml::to_string(&config).unwrap();
         let expected = indoc! {
-         r#"[index]
+        r#"[index]
             folder = ["~/Music", "/Volumes/Music"]
 
             [locate]
@@ -203,10 +217,7 @@ mod tests {
             literal_separator = false
             mode = "auto"
             "#};
-        assert_eq!(
-            toml,
-            expected
-        );
+        assert_eq!(toml, expected);
         // println!("{}", toml);
     }
 }

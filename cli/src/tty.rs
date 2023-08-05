@@ -1,6 +1,6 @@
 use nix::sys::termios::{self, LocalFlags, SetArg};
-use std::os::unix::io::RawFd;
 use std::io::Result;
+use std::os::unix::io::RawFd;
 
 const STDIN_FILENO: RawFd = libc::STDIN_FILENO;
 

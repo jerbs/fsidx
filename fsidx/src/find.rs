@@ -52,7 +52,11 @@ impl FindExt for &str {
         }
     }
 
-    fn find_case_insensitive(&self, start: usize, upper_case_pattern: &str) -> Option<Range<usize>> {
+    fn find_case_insensitive(
+        &self,
+        start: usize,
+        upper_case_pattern: &str,
+    ) -> Option<Range<usize>> {
         let mut needle_it = upper_case_pattern.chars();
         if let Some(mut needle_next_ch) = needle_it.next() {
             let mut start: usize = start;
@@ -61,7 +65,7 @@ impl FindExt for &str {
             'outer: loop {
                 if let Some(hey_ch) = hey_it.next() {
                     let hey_ch_len = hey_ch.len_utf8();
-                    end = end + hey_ch_len;      
+                    end = end + hey_ch_len;
                     let mut hey_ch_upper_it = hey_ch.to_uppercase();
                     while let Some(hey_ch_upper) = hey_ch_upper_it.next() {
                         let needle_ch = needle_next_ch;
@@ -163,7 +167,7 @@ impl FindExt for &str {
                             }
                         } else {
                             return None;
-                        }    
+                        }
                     }
                 } else {
                     return None;
@@ -217,7 +221,7 @@ impl FindExt for &str {
             pos = pos + ch2.ch.len_utf8();
             ch1 = ch2;
         }
-        None        
+        None
     }
 
     fn tag_word_end_boundary(&self, start: usize) -> bool {
@@ -335,7 +339,6 @@ mod tests {
         assert_eq!("bar baz Foo".find_case_insensitive(0, "FOO"), Some(8..11));
     }
 
-
     #[test]
     fn test_find_case_insensitive_multibyte() {
         assert_eq!("ööö".find_case_insensitive(0, ""), Some(0..0));
@@ -368,8 +371,8 @@ mod tests {
     #[test]
     fn test_skip_character() {
         assert_eq!("foo bar".skip_character(2), 3);
-        assert_eq!("1ä".skip_character(1), 3);   // 0xC3, 0xA4 (ä)
-        assert_eq!("1ä".skip_character(1), 2);   // 0x61 (a), 0xCC, 0x88 (Trema for previous letter)
+        assert_eq!("1ä".skip_character(1), 3); // 0xC3, 0xA4 (ä)
+        assert_eq!("1ä".skip_character(1), 2); // 0x61 (a), 0xCC, 0x88 (Trema for previous letter)
     }
 
     #[test]

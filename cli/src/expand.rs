@@ -1,9 +1,9 @@
+use crate::cli::CliError;
 use globset::GlobBuilder;
+use nom::IResult;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use nom::IResult;
-use crate::cli::CliError;
 
 // Selection refers to the indexed list with the last query result.
 // idx.           -- Open single file from selection
@@ -24,28 +24,42 @@ impl<'a> Expand<'a> {
         }
     }
 
-    pub(crate) fn foreach<F: FnMut(&Path)->Result<(), CliError>>(&self, mut f: F) -> Result<(), CliError> {
+    pub(crate) fn foreach<F: FnMut(&Path) -> Result<(), CliError>>(
+        &self,
+        mut f: F,
+    ) -> Result<(), CliError> {
         match &self.open_rule {
             OpenRule::Glob(glob) => expand_glob(glob, self.selection, &mut f),
             OpenRule::Index(index) => expand_index(*index, self.selection, &mut f),
-            OpenRule::IndexRange(start, end) => expand_index_range(*start, *end, self.selection, &mut f),
-            OpenRule::IndexGlob(index, glob) => expand_index_with_glob(*index, glob, self.selection, &mut f),
+            OpenRule::IndexRange(start, end) => {
+                expand_index_range(*start, *end, self.selection, &mut f)
+            }
+            OpenRule::IndexGlob(index, glob) => {
+                expand_index_with_glob(*index, glob, self.selection, &mut f)
+            }
         }
-    } 
+    }
 }
 
-
-
 // idx.           -- Open single file from selection
-fn expand_index<F: FnMut(&Path)->Result<(), CliError>>(index: usize, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
+fn expand_index<F: FnMut(&Path) -> Result<(), CliError>>(
+    index: usize,
+    selection: &Vec<PathBuf>,
+    f: &mut F,
+) -> Result<(), CliError> {
     let path = selection
-    .get(index - 1)
-    .ok_or(CliError::InvalidOpenIndex(index))?;
+        .get(index - 1)
+        .ok_or(CliError::InvalidOpenIndex(index))?;
     f(path)
 }
 
 // idx.-idx.      -- Opens range of files from selection
-fn expand_index_range<F: FnMut(&Path)->Result<(), CliError>>(start: usize, end: usize, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
+fn expand_index_range<F: FnMut(&Path) -> Result<(), CliError>>(
+    start: usize,
+    end: usize,
+    selection: &Vec<PathBuf>,
+    f: &mut F,
+) -> Result<(), CliError> {
     for index in start..=end {
         expand_index(index, selection, f)?;
     }
@@ -53,9 +67,13 @@ fn expand_index_range<F: FnMut(&Path)->Result<(), CliError>>(start: usize, end: 
 }
 
 // glob           -- Opens all matching files from selection
-fn expand_glob<F: FnMut(&Path)->Result<(), CliError>>(glob: &str, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
+fn expand_glob<F: FnMut(&Path) -> Result<(), CliError>>(
+    glob: &str,
+    selection: &Vec<PathBuf>,
+    f: &mut F,
+) -> Result<(), CliError> {
     let glob_set = GlobBuilder::new(glob)
-        .case_insensitive(true)   // FIXME: Make this configurable.
+        .case_insensitive(true) // FIXME: Make this configurable.
         .literal_separator(false) // FIXME: Make this configurable.
         .backslash_escape(true)
         .empty_alternates(true)
@@ -71,7 +89,12 @@ fn expand_glob<F: FnMut(&Path)->Result<(), CliError>>(glob: &str, selection: &Ve
 }
 
 // idx./path/glob -- Opens all matching files from selection
-fn expand_index_with_glob<F: FnMut(&Path)->Result<(), CliError>>(index: usize, glob: &str, selection: &Vec<PathBuf>, f: &mut F) -> Result<(), CliError> {
+fn expand_index_with_glob<F: FnMut(&Path) -> Result<(), CliError>>(
+    index: usize,
+    glob: &str,
+    selection: &Vec<PathBuf>,
+    f: &mut F,
+) -> Result<(), CliError> {
     let Some(path) = selection.get(index) else {
         return Err(CliError::InvalidOpenIndex(index));
     };
@@ -110,8 +133,7 @@ impl FromStr for OpenRule {
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         use nom::Finish;
-        let (_rest, open_rule) = parse_open_rule(s)
-            .finish()?;
+        let (_rest, open_rule) = parse_open_rule(s).finish()?;
         Ok(open_rule)
     }
 }
@@ -120,9 +142,15 @@ impl Debug for OpenRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Index(index) => f.debug_tuple("Index").field(index).finish(),
-            Self::IndexRange(start, end) => f.debug_tuple("IndexRange").field(start).field(end).finish(),
+            Self::IndexRange(start, end) => {
+                f.debug_tuple("IndexRange").field(start).field(end).finish()
+            }
             Self::Glob(glob) => f.debug_tuple("Glob").field(glob).finish(),
-            Self::IndexGlob(index, glob) => f.debug_tuple("IndexWithGlob").field(index).field(glob).finish(),
+            Self::IndexGlob(index, glob) => f
+                .debug_tuple("IndexWithGlob")
+                .field(index)
+                .field(glob)
+                .finish(),
         }
     }
 }
@@ -130,7 +158,9 @@ impl Debug for OpenRule {
 impl Debug for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            _ => {f.write_str("ParseError")?;}
+            _ => {
+                f.write_str("ParseError")?;
+            }
         }
         Ok(())
     }
@@ -144,33 +174,17 @@ fn parse_open_rule(input: &str) -> IResult<&str, OpenRule> {
     use nom::sequence::tuple;
     all_consuming(alt((
         map(
-            tuple((
-                u64::<&str, _>,
-                tag("./"),
-                rest
-            ))
-            ,|(idx, _, glob)| OpenRule::IndexGlob(idx as usize, glob.to_string())
+            tuple((u64::<&str, _>, tag("./"), rest)),
+            |(idx, _, glob)| OpenRule::IndexGlob(idx as usize, glob.to_string()),
         ),
         map(
-            tuple((
-                u64,
-                tag(".-"),
-                u64,
-                tag(".")
-            ))
-            ,|(start, _, end, _)| OpenRule::IndexRange(start as usize, end as usize)
+            tuple((u64, tag(".-"), u64, tag("."))),
+            |(start, _, end, _)| OpenRule::IndexRange(start as usize, end as usize),
         ),
-        map(
-            tuple((
-                u64,
-                tag(".")
-            ))
-            ,|(idx, _)| OpenRule::Index(idx as usize)
-        ),
-        map(
-            rest::<&str, _>
-            ,|glob| OpenRule::Glob(glob.to_string())
-        )
+        map(tuple((u64, tag("."))), |(idx, _)| {
+            OpenRule::Index(idx as usize)
+        }),
+        map(rest::<&str, _>, |glob| OpenRule::Glob(glob.to_string())),
     )))(input)
 }
 
@@ -178,14 +192,14 @@ fn normalize(mut glob: String) -> String {
     loop {
         if let Some(pos2) = glob.find("/../") {
             if let Some(pos1) = glob[0..pos2].rfind("/") {
-                glob.replace_range(pos1+1..pos2+4, "");
+                glob.replace_range(pos1 + 1..pos2 + 4, "");
             } else {
                 break;
             }
         } else {
             break;
         }
-    };
+    }
     glob
 }
 
@@ -210,12 +224,18 @@ mod tests {
 
     #[test]
     fn invalid_index() {
-        assert_eq!("123".parse::<OpenRule>(), Ok(OpenRule::Glob("123".to_string())));
+        assert_eq!(
+            "123".parse::<OpenRule>(),
+            Ok(OpenRule::Glob("123".to_string()))
+        );
     }
 
     #[test]
     fn index_and_glob() {
-        assert_eq!("423./../*.flac".parse::<OpenRule>(), Ok(OpenRule::IndexGlob(423, "../*.flac".to_string())));
+        assert_eq!(
+            "423./../*.flac".parse::<OpenRule>(),
+            Ok(OpenRule::IndexGlob(423, "../*.flac".to_string()))
+        );
     }
 
     #[test]
