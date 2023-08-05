@@ -1,4 +1,5 @@
 use crate::config::LocateConfig;
+use crate::filter::CompiledFilter;
 use crate::{filter, FilterToken, Settings, VolumeInfo};
 use fastvlq::ReadVu64Ext;
 use std::convert::TryFrom;
@@ -43,9 +44,10 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
     interrupt: Option<Arc<AtomicBool>>,
     mut f: F,
 ) -> Result<(), LocateError> {
+    let filter = filter::compile(&filter, config)?;
     for vi in &volume_info {
         f(LocateEvent::Searching(&vi.folder)).map_err(LocateError::WritingResultFailed)?;
-        let res = locate_volume(vi, &filter, config, &interrupt, &mut f);
+        let res = locate_volume(vi, &filter, &interrupt, &mut f);
         if let Err(ref err) = res {
             match err {
                 LocateError::Interrupted => return res,
@@ -62,13 +64,11 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
 
 pub fn locate_volume<F: FnMut(LocateEvent) -> IOResult<()>>(
     volume_info: &VolumeInfo,
-    filter: &[FilterToken],
-    config: &LocateConfig,
+    filter: &CompiledFilter,
     interrupt: &Option<Arc<AtomicBool>>,
     f: &mut F,
 ) -> Result<(), LocateError> {
     let mut reader = FileIndexReader::new(&volume_info.database)?;
-    let filter = filter::compile(filter, config)?;
     loop {
         if interrupt
             .as_ref()
