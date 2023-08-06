@@ -20,7 +20,7 @@ fsidx - find filenames quickly
 :   Specify the configuration file to use.  (See **fsidx.toml**(5).)
 
 **`-h`**, **`--help`**
-:   Display available options and subcommands.
+:   Display available options and subcommands. Using the short option multiple times displays different documentation: Usage information (**`-h`**), fsidx man page (**`-hh`** or **`--help`**), fsidx.toml man page (**`-hhh`**) describing the configuration file format.
 
 **`-v`**, **`--verbose`**
 :   Verbose mode.q
@@ -58,7 +58,7 @@ The **locate** subcommand uses a search query to find matching path names in the
 
     - When backslash escapes are enabled, a backslash (**`\`**) will escape all meta characters in a glob. If it precedes a non-meta character, then the slash is ignored. A **`\\`** will match a literal **`\`**.
 
-**options**
+**Options**
 :   Single character short options start with a single leading dash. Long options start with two leading dashs. Short options with a single leading slash can be combined. 
 
 **locate** supports the following options:

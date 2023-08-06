@@ -1,7 +1,7 @@
 use crate::cli::CliError;
 use crate::config::Config;
 use crate::expand::{Expand, OpenRule};
-use crate::help::{help_shell, help_shell_short};
+use crate::help::{help_shell_long, help_shell_short};
 use crate::locate::locate_shell;
 use crate::tokenizer::{tokenize_shell, Token};
 use crate::tty::set_tty;
@@ -139,7 +139,7 @@ fn process_shell_line(
                     update_shell(config)?;
                 }
                 "\\h" => {
-                    let _ = help_shell();
+                    let _ = help_shell_long();
                 }
                 _ => {
                     let _ = help_shell_short();

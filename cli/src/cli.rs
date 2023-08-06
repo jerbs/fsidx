@@ -1,5 +1,5 @@
 use crate::config::{find_and_load, load_from_path, Config, ConfigError};
-use crate::help::{help_cli, print_version, usage_cli};
+use crate::help::{help_cli_long, help_cli_short, help_toml, print_version, usage_cli};
 use crate::locate::locate_cli;
 use crate::shell::shell;
 use crate::tokenizer::{tokenize_arg, Token};
@@ -12,7 +12,7 @@ use std::path::PathBuf;
 #[derive(Default)]
 struct MainOptions {
     config_file: Option<PathBuf>,
-    help: bool,
+    help: u8,
     verbose: u8,
     version: bool,
 }
@@ -134,8 +134,13 @@ fn process_main_command() -> Result<(), CliError> {
     let _ = args.next();
     let (main_options, sub_command) = parse_main_command(&mut args)?;
     set_verbosity(main_options.verbose);
-    if main_options.help {
-        let _ = help_cli();
+    if main_options.help != 0 {
+        let _ = match main_options.help {
+            1 => help_cli_short(),
+            2 => help_cli_long(),
+            3 => help_toml(),
+            _ => usage_cli(),
+        };
         return Ok(());
     }
     if main_options.version {
@@ -166,7 +171,7 @@ fn process_main_command() -> Result<(), CliError> {
             "shell" => shell(config, &mut args),
             "locate" => locate_cli(&config, &mut args),
             "update" => update_cli(&config, &mut args),
-            "help" => help_cli(),
+            "help" => help_cli_long(),
             _ => Err(CliError::InvalidSubCommand(sub_command)),
         }
     } else {
@@ -205,8 +210,11 @@ impl MainOptions {
                         .ok_or_else(|| CliError::MissingOptionValue(option.to_string()))?,
                 );
             }
-            "h" | "help" => {
-                self.help = true;
+            "h" => {
+                self.help += 1;
+            }
+            "help" => {
+                self.help = 2;
             }
             "v" | "verbose" => {
                 self.verbose += 1;
