@@ -232,6 +232,8 @@ pub fn apply(text: &str, filter: &CompiledFilter) -> bool {
         pos: 0,
     };
     let mut back_tracking = state;
+    let mut has_glob = false;
+    let mut has_matched_glob = false;
     while state.filter_index < filter.token.len() {
         let token = &filter.token[state.filter_index];
         if let CompiledFilterToken::FindCaseInsensitive(_) = token {
@@ -281,9 +283,8 @@ pub fn apply(text: &str, filter: &CompiledFilter) -> bool {
                 } else {
                     text
                 };
-                if !glob.is_match(text) {
-                    return false;
-                };
+                has_glob = true;
+                has_matched_glob = has_matched_glob || glob.is_match(text);
             }
             CompiledFilterToken::FindCaseInsensitive(pattern) => {
                 if let Some(range) = text.find_case_insensitive(state.pos, pattern) {
@@ -339,7 +340,7 @@ pub fn apply(text: &str, filter: &CompiledFilter) -> bool {
             }
         }
     }
-    true
+    !has_glob || has_matched_glob
 }
 
 #[cfg(test)]
@@ -978,6 +979,15 @@ mod tests {
             ]),
             EMPTY
         );
+    }
+
+    #[test]
+    fn multiple_globs_accumulate_results() {
+        let config = LocateConfig::default();
+        let filter = compile(&[t("*.jpg"), t("*.mp4")], &config).unwrap();
+        assert_eq!(apply("/path/to/some.jpg", &filter), true);
+        assert_eq!(apply("/path/to/some.mp4", &filter), true);
+        assert_eq!(apply("/path/to/some.txt", &filter), false);
     }
 
     #[test]
