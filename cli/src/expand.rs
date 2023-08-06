@@ -95,7 +95,10 @@ fn expand_index_with_glob<F: FnMut(&Path) -> Result<(), CliError>>(
     selection: &Vec<PathBuf>,
     f: &mut F,
 ) -> Result<(), CliError> {
-    let Some(path) = selection.get(index) else {
+    if index < 1 {
+        return Err(CliError::InvalidOpenIndex(index));
+    }
+    let Some(path) = selection.get(index-1) else {
         return Err(CliError::InvalidOpenIndex(index));
     };
     let Some(path) = path.to_str() else {
@@ -146,11 +149,9 @@ impl Debug for OpenRule {
                 f.debug_tuple("IndexRange").field(start).field(end).finish()
             }
             Self::Glob(glob) => f.debug_tuple("Glob").field(glob).finish(),
-            Self::IndexGlob(index, glob) => f
-                .debug_tuple("IndexWithGlob")
-                .field(index)
-                .field(glob)
-                .finish(),
+            Self::IndexGlob(index, glob) => {
+                f.debug_tuple("IndexGlob").field(index).field(glob).finish()
+            }
         }
     }
 }
