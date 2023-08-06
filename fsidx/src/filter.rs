@@ -38,7 +38,6 @@ enum CompiledFilterToken {
     ExpectCaseInsensitive(String),
     ExpectCaseSensitive(String),
     ExpectWordEndBoundary,
-    Nothing,
 }
 
 #[derive(Clone, Debug)]
@@ -77,6 +76,7 @@ pub fn compile(
     let mut options = Options::new(config);
     let mut compiled = CompiledFilter { token: Vec::new() };
     let mut mode: Mode = config.mode;
+    let mut nothing = true;
     for token in filter {
         match token {
             FilterToken::CaseSensitive => {
@@ -141,6 +141,7 @@ pub fn compile(
                                     fragment.to_uppercase(),
                                 ));
                         }
+                        nothing = false;
                     }
                     for fragment in it {
                         compiled.token.push(CompiledFilterToken::SkipSmartSpace);
@@ -177,6 +178,7 @@ pub fn compile(
                         glob_matcher,
                         options.last_element,
                     ));
+                    nothing = false;
                 };
             }
             FilterToken::AnyOrder => {
@@ -211,8 +213,8 @@ pub fn compile(
             }
         }
     }
-    if compiled.token.is_empty() {
-        compiled.token.push(CompiledFilterToken::Nothing);
+    if nothing {
+        return Err(LocateError::Trivial);
     }
     Ok(compiled)
 }
@@ -335,9 +337,6 @@ pub fn apply(text: &str, filter: &CompiledFilter) -> bool {
                     };
                 }
             }
-            CompiledFilterToken::Nothing => {
-                return false;
-            }
         }
     }
     true
@@ -373,13 +372,18 @@ mod tests {
     }
 
     #[test]
-    fn all_with_empty_string() {
-        assert_eq!(process(&[t("")]), [S0, S1, S2, S3, S4, S5, S6, S7]);
+    fn nothing_with_empty_string() {
+        let config = LocateConfig::default();
+        assert!(matches!(
+            compile(&[t("")], &config),
+            Err(LocateError::Trivial)
+        ));
     }
 
     #[test]
     fn nothing_with_empty_list() {
-        assert_eq!(process(&[]), EMPTY);
+        let config = LocateConfig::default();
+        assert!(matches!(compile(&[], &config), Err(LocateError::Trivial)));
     }
 
     #[test]

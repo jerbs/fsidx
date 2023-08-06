@@ -31,6 +31,7 @@ pub enum LocateError {
     Interrupted,
     BrokenPipe,
     GlobPatternError(String, globset::Error),
+    Trivial,
 }
 
 pub struct Metadata {
@@ -44,7 +45,11 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
     interrupt: Option<Arc<AtomicBool>>,
     mut f: F,
 ) -> Result<(), LocateError> {
-    let filter = filter::compile(&filter, config)?;
+    let filter = filter::compile(&filter, config);
+    if matches!(filter, Err(LocateError::Trivial)) {
+        return Ok(());
+    }
+    let filter = filter?;
     for vi in &volume_info {
         f(LocateEvent::Searching(&vi.folder)).map_err(LocateError::WritingResultFailed)?;
         let res = locate_volume(vi, &filter, &interrupt, &mut f);
@@ -196,6 +201,7 @@ impl Display for LocateError {
             LocateError::GlobPatternError(glob, err) => {
                 f.write_fmt(format_args!("Glob pattern error for `{}`: {}", glob, err))
             }
+            LocateError::Trivial => f.write_str("Trivial"),
         }
     }
 }
