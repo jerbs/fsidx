@@ -149,6 +149,8 @@ The open command **`\o`** accepts the following arguments:
 
 For variants, except **`glob`**, of the open command the `\o` can be omitted. For the glob only variant the `\o` is required to distinguish it from a locate query.
 
+For long options completions (tab) and hints (right cursor) are provided.
+
 ## HELP
 
 The **help** subcommand displays available options and subcommands.

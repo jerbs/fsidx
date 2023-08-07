@@ -8,8 +8,12 @@ use crate::tty::set_tty;
 use crate::update::update_shell;
 use crate::verbosity::verbosity;
 use fsidx::LocateError;
+use rustyline::completion::Completer;
+use rustyline::config::Config as RlConfig;
 use rustyline::error::ReadlineError;
-use rustyline::DefaultEditor;
+use rustyline::hint::Hinter;
+use rustyline::Editor;
+use rustyline::{Helper, Highlighter, Validator};
 use signal_hook::consts::signal::SIGINT;
 use signal_hook::iterator::Signals;
 use std::env::Args;
@@ -48,7 +52,20 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
             }
         }
     });
-    let mut rl = DefaultEditor::new()?;
+    let rl_config = RlConfig::builder()
+        .max_history_size(100)?
+        .history_ignore_dups(true)?
+        .history_ignore_space(true)
+        .completion_type(rustyline::CompletionType::List)
+        .completion_prompt_limit(20)
+        .edit_mode(rustyline::EditMode::Emacs)
+        .auto_add_history(true)
+        .bell_style(rustyline::config::BellStyle::None)
+        .color_mode(rustyline::ColorMode::Enabled)
+        .build();
+    let helper = ShellHelper {};
+    let mut rl = Editor::<ShellHelper, _>::with_config(rl_config)?;
+    rl.set_helper(Some(helper));
     let history = if let Some(db_path) = &config.index.db_path {
         let history = Path::new(&db_path).join("history.txt");
         if let Err(err) = rl.load_history(&history) {
@@ -110,6 +127,95 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
         }
     }
     Ok(())
+}
+
+#[derive(Helper, Highlighter, Validator)]
+struct ShellHelper {}
+
+const LONG_OPTIONS: [&str; 15] = [
+    "--case_sensitive ",
+    "--case_insensitive ",
+    "--plain ",
+    "--glob ",
+    "--auto ",
+    "--same_order ",
+    "--any_order ",
+    "--last_element ",
+    "--whole_path ",
+    "--no_smart_spaces ",
+    "--smart_spaces ",
+    "--word_boundary ",
+    "--no_word_boundary ",
+    "--literal_separator ",
+    "--no_literal_separator ",
+];
+
+impl Hinter for ShellHelper {
+    type Hint = String;
+
+    fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
+        let start = start_position(line, pos);
+        let partial = &line[start..pos];
+        if partial.is_empty() {
+            return None;
+        }
+        if let Some(first) = LONG_OPTIONS
+            .into_iter()
+            .find(|cand| cand.starts_with(partial))
+        {
+            let hint = first[pos - start..].to_string();
+            Some(hint)
+        } else {
+            None
+        }
+    }
+}
+
+impl Completer for ShellHelper {
+    type Candidate = &'static str;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &rustyline::Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<Self::Candidate>)> {
+        let start = start_position(line, pos);
+        let partial = &line[start..pos];
+        if partial.is_empty() {
+            Ok((0, Vec::with_capacity(0)))
+        } else {
+            let candidates = LONG_OPTIONS
+                .into_iter()
+                .filter(|cand| cand.starts_with(partial))
+                .collect();
+            Ok((start, candidates))
+        }
+    }
+
+    fn update(
+        &self,
+        line: &mut rustyline::line_buffer::LineBuffer,
+        start: usize,
+        elected: &str,
+        cl: &mut rustyline::Changeset,
+    ) {
+        let end = line.pos();
+        line.replace(start..end, elected, cl);
+    }
+}
+
+fn start_position(line: &str, pos: usize) -> usize {
+    if let Some(pos_last_whitespace) = line[0..pos].rfind(|ch: char| ch.is_whitespace()) {
+        pos_last_whitespace
+            + line[pos_last_whitespace..]
+                .chars()
+                .next()
+                .unwrap()
+                .len_utf8()
+    } else {
+        0
+    }
 }
 
 enum ShellAction {
