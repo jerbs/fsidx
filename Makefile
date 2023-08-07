@@ -13,6 +13,7 @@ INSTALL_DATA ?= $(INSTALL)
 
 .PHONY: all clean clean-man default \
 		fsidx fsidx.1 fsidx.toml.5 \
+		view.fsidx view.fsidx.toml \
 		target/release/fsidx \
 		install man test uninstall
 
@@ -55,3 +56,9 @@ target/man/man1/fsidx.1: cli/doc/fsidx.1.md
 target/man/man5/fsidx.toml.5: cli/doc/fsidx.toml.5.md
 	mkdir -p $(dir $@)
 	pandoc -s -t man -o $@ $<
+
+view.fsidx: fsidx.1
+	MANPATH=target/man man fsidx
+
+view.fsidx.toml: fsidx.toml.5
+	MANPATH=target/man man fsidx.toml
