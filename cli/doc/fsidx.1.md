@@ -147,7 +147,7 @@ The open command **`\o`** accepts the following arguments:
 **`nnn./path/glob`**
 :   glob is any glob pattern. The glob pattern is prefixed with the pathname of the nnn-th result of the last search query. In addition a relative path can also be defined. The resulting path is normalized, i.e. for every **`..`** the corresponding path is removed. The resulting glob pattern is applied on the results of the last query. All matching files and directories are opened with their default applications.
 
-For variants, except **`glob`**, of the open command the `\o` can be omitted. For the glob only variant the `\o` is required to distinguish it from a locate query.
+For all variants of the open command, except **`glob`**, the `\o` can be omitted. For the glob only variant the `\o` is required to distinguish it from a locate query.
 
 For long options completions (tab) and hints (right cursor) are provided.
 
