@@ -102,12 +102,12 @@ fn pretty_print_usage(usage: &str) -> Result<(), CliError> {
         if ch == ':' {
             pos += len;
             stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
-            stdout.write_all(&usage[start..pos].as_bytes())?;
+            stdout.write_all(usage[start..pos].as_bytes())?;
             stdout.set_color(&ColorSpec::new())?;
             start = pos;
         } else if (ch.is_alphanumeric() || ch == '-') && !quote {
             if !green {
-                stdout.write_all(&usage[start..pos].as_bytes())?;
+                stdout.write_all(usage[start..pos].as_bytes())?;
                 start = pos;
                 green = true;
             }
@@ -115,7 +115,7 @@ fn pretty_print_usage(usage: &str) -> Result<(), CliError> {
         } else {
             if green {
                 stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
-                stdout.write_all(&usage[start..pos].as_bytes())?;
+                stdout.write_all(usage[start..pos].as_bytes())?;
                 stdout.set_color(&ColorSpec::new())?;
                 start = pos;
                 green = false;
@@ -129,7 +129,7 @@ fn pretty_print_usage(usage: &str) -> Result<(), CliError> {
         }
     }
     // No green here. Text is expected to end with newline.
-    stdout.write_all(&usage[start..pos].as_bytes())?;
+    stdout.write_all(usage[start..pos].as_bytes())?;
     Ok(())
 }
 
@@ -138,23 +138,21 @@ fn pretty_print_help(help: &str) -> Result<(), CliError> {
     for line in help.lines() {
         if line.ends_with(':') {
             stdout.set_color(ColorSpec::new().set_fg(Some(Color::Yellow)))?;
-            stdout.write_all(&line.as_bytes())?;
+            stdout.write_all(line.as_bytes())?;
             stdout.set_color(&ColorSpec::new())?;
             stdout.write_all(b"\n")?;
             continue;
-        } else {
-            if let Some((pos, _)) = line.char_indices().nth(4) {
-                if let Some(pos2) = line[pos..].find("  ") {
-                    stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
-                    stdout.write_all(&line[0..pos + pos2].as_bytes())?;
-                    stdout.set_color(&ColorSpec::new())?;
-                    stdout.write_all(&line[pos + pos2..].as_bytes())?;
-                    stdout.write_all(b"\n")?;
-                    continue;
-                }
+        } else if let Some((pos, _)) = line.char_indices().nth(4) {
+            if let Some(pos2) = line[pos..].find("  ") {
+                stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
+                stdout.write_all(line[0..pos + pos2].as_bytes())?;
+                stdout.set_color(&ColorSpec::new())?;
+                stdout.write_all(line[pos + pos2..].as_bytes())?;
+                stdout.write_all(b"\n")?;
+                continue;
             }
         }
-        stdout.write_all(&line.as_bytes())?;
+        stdout.write_all(line.as_bytes())?;
         stdout.write_all(b"\n")?;
     }
     Ok(())

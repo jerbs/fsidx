@@ -86,7 +86,7 @@ pub fn locate_volume<F: FnMut(LocateEvent) -> IOResult<()>>(
             Ok(Some((path, metadata))) => {
                 let bytes = path.as_os_str().as_bytes();
                 let text = String::from_utf8_lossy(bytes);
-                if filter::apply(&text, &filter) {
+                if filter::apply(&text, filter) {
                     f(LocateEvent::Entry(path, &metadata))
                         .map_err(LocateError::WritingResultFailed)?;
                 }
