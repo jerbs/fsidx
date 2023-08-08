@@ -8,10 +8,6 @@ description = "Finding file names quickly with a database."
 categories = ["command-line-utilities", "filesystem"]
 keywords = ["locate"]
 
-[[bin]]
-name = "fsidx"
-path = "src/bin.rs"
-
 [dependencies]
 clap = "4.3.11"
 fsidx = {version = "0.1.0", path = "../fsidx" }

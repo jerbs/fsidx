@@ -9,4 +9,7 @@ mod tty;
 mod update;
 mod verbosity;
 
-pub use cli::main;
+fn main() {
+    let exit_code = cli::main();
+    std::process::exit(exit_code);
+}
