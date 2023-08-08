@@ -69,7 +69,7 @@ impl Options {
     }
 }
 
-pub fn compile(
+pub(crate) fn compile(
     filter: &[FilterToken],
     config: &LocateConfig,
 ) -> Result<CompiledFilter, LocateError> {
@@ -225,7 +225,7 @@ struct State {
     pos: usize, // actual or lower-case position in whole path or last element
 }
 
-pub fn apply(text: &str, filter: &CompiledFilter) -> bool {
+pub(crate) fn apply(text: &str, filter: &CompiledFilter) -> bool {
     let mut pos_last: Option<usize> = None;
     let mut state = State {
         filter_index: 0,
@@ -979,6 +979,35 @@ mod tests {
             ]),
             EMPTY
         );
+    }
+
+    #[test]
+    fn glob_case() {
+        let check = |text, filter| -> bool {
+            let config = LocateConfig::default();
+            let compiled_filter = compile(filter, &config).unwrap();
+            apply(text, &compiled_filter)
+        };
+        let filter = [
+            FilterToken::CaseSensitive,
+            FilterToken::Text(String::from("File")),
+            FilterToken::Text(String::from("*.mp4")),
+        ];
+        assert_eq!(check("File.mp4", &filter), true);
+
+        let filter = [
+            FilterToken::CaseSensitive,
+            FilterToken::Text(String::from("file")),
+            FilterToken::Text(String::from("*.mp4")),
+        ];
+        assert_eq!(check("File.mp4", &filter), false);
+
+        let filter = [
+            FilterToken::CaseInSensitive,
+            FilterToken::Text(String::from("file")),
+            FilterToken::Text(String::from("*.mp4")),
+        ];
+        assert_eq!(check("File.mp4", &filter), true);
     }
 
     #[test]

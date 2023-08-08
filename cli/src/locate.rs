@@ -147,20 +147,18 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateEvent) -> IOResu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fsidx::LocateConfig;
-
-    fn process(text: &str, query: &str) -> bool {
-        let token = tokenize_shell(query).unwrap();
-        let filter = locate_filter(token).unwrap();
-        let config = LocateConfig::default();
-        let compiled = fsidx::compile(filter.as_slice(), &config).unwrap();
-        fsidx::apply(text, &compiled)
-    }
 
     #[test]
     fn glob_case() {
-        assert_eq!(process("File.mp4", "-c File *.mp4"), true);
-        assert_eq!(process("File.mp4", "-c file *.mp4"), false);
-        assert_eq!(process("File.mp4", "file *.mp4"), true);
+        let token = tokenize_shell("-c File *.mp4").unwrap();
+        let filter: Vec<FilterToken> = locate_filter(token).unwrap();
+        assert_eq!(
+            filter,
+            vec![
+                FilterToken::CaseSensitive,
+                FilterToken::Text(String::from("File")),
+                FilterToken::Text(String::from("*.mp4"))
+            ]
+        );
     }
 }
