@@ -37,18 +37,18 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
         return Err(CliError::InvalidShellArgument(arg));
     }
     set_tty().map_err(CliError::TtyConfigurationFailed)?;
-    let interrupt = Arc::new(AtomicBool::new(false));
+    let abort = Arc::new(AtomicBool::new(false));
     let mut signals = Signals::new([SIGINT]) // Ctrl-C
         .map_err(CliError::CreatingSignalHandlerFailed)?;
-    let interrupt_for_signal_handler = interrupt.clone();
+    let abort_for_signal_handler = abort.clone();
     std::thread::spawn(move || {
-        let interrupt = interrupt_for_signal_handler;
+        let abort = abort_for_signal_handler;
         for sig in signals.forever() {
             if verbosity() {
                 println!("Received signal {}", sig);
             }
             if sig == SIGINT {
-                interrupt.store(true, Ordering::Relaxed);
+                abort.store(true, Ordering::Relaxed);
             }
         }
     });
@@ -85,8 +85,8 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())?;
-                interrupt.store(false, Ordering::Relaxed);
-                match process_shell_line(&config, &line, interrupt.clone(), &selection) {
+                abort.store(false, Ordering::Relaxed);
+                match process_shell_line(&config, &line, abort.clone(), &selection) {
                     Ok(ShellAction::Found(s)) => {
                         if !s.is_empty() {
                             selection = Some(s);
@@ -97,7 +97,7 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
                         break;
                     }
                     Ok(ShellAction::None) => {}
-                    Err(CliError::LocateError(LocateError::Interrupted)) => {
+                    Err(CliError::LocateError(LocateError::Aborted)) => {
                         println!("CTRL-C");
                     }
                     Err(CliError::LocateError(LocateError::BrokenPipe)) => {
@@ -227,7 +227,7 @@ enum ShellAction {
 fn process_shell_line(
     config: &Config,
     line: &str,
-    interrupt: Arc<AtomicBool>,
+    abort: Arc<AtomicBool>,
     selection: &Option<Vec<PathBuf>>,
 ) -> Result<ShellAction, CliError> {
     let token = tokenize_shell(line)?;
@@ -263,7 +263,7 @@ fn process_shell_line(
         }
     }
     // Locate query:
-    match locate_shell(config, line, Some(interrupt)) {
+    match locate_shell(config, line, Some(abort)) {
         Ok(paths) => Ok(ShellAction::Found(paths)),
         Err(err) => Err(err),
     }

@@ -37,7 +37,7 @@ pub(crate) fn help_toml() -> Result<(), CliError> {
 pub(crate) fn help_shell_short() -> Result<(), CliError> {
     let help: &str = concat!(
         "Short-Cuts:\n",
-        "    Ctrl-C       Interrupt printing results\n",
+        "    Ctrl-C       Abort printing results\n",
         "    Ctrl-D       Terminate application\n",
         "\n",
         "Commands:\n",
@@ -52,7 +52,7 @@ pub(crate) fn help_shell_short() -> Result<(), CliError> {
 pub(crate) fn help_shell_long() -> Result<(), CliError> {
     let help: &str = concat!(
         "Short-Cuts:\n",
-        "    Ctrl-C       Interrupt printing results\n",
+        "    Ctrl-C       Abort printing results\n",
         "    Ctrl-D       Terminate application\n",
         "\n",
         "Commands:\n",

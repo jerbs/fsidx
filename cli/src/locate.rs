@@ -24,13 +24,13 @@ pub(crate) fn locate_cli(config: &Config, args: &mut Args) -> Result<(), CliErro
 pub(crate) fn locate_shell(
     config: &Config,
     line: &str,
-    interrupt: Option<Arc<AtomicBool>>,
+    abort: Option<Arc<AtomicBool>>,
 ) -> Result<Vec<PathBuf>, CliError> {
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     let mut selection = Vec::new();
     let token = tokenize_shell(line)?;
     let filter_token = locate_filter(token)?;
-    locate_impl(config, filter_token, interrupt, |res| {
+    locate_impl(config, filter_token, abort, |res| {
         if let LocateEvent::Entry(path, _) = res {
             let pb = path.to_path_buf();
             selection.push(pb);
@@ -47,11 +47,11 @@ pub(crate) fn locate_shell(
 fn locate_impl<F: FnMut(LocateEvent) -> IOResult<()>>(
     config: &Config,
     filter_token: Vec<FilterToken>,
-    interrupt: Option<Arc<AtomicBool>>,
+    abort: Option<Arc<AtomicBool>>,
     f: F,
 ) -> Result<(), CliError> {
     let volume_info = get_volume_info(config).ok_or(CliError::NoDatabasePath)?;
-    match fsidx::locate(volume_info, filter_token, &config.locate, interrupt, f) {
+    match fsidx::locate(volume_info, filter_token, &config.locate, abort, f) {
         Ok(_) => Ok(()),
         Err(fsidx::LocateError::BrokenPipe) => Ok(()), // No error for: fsidx | head -n 5
         Err(err) => Err(CliError::LocateError(err)),
@@ -118,9 +118,6 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateEvent) -> IOResu
             stdout.write_all(b"\n")?;
         }
         LocateEvent::Finished => {}
-        LocateEvent::Interrupted => {
-            stdout.write_all(b"CTRL-C\n")?;
-        }
         LocateEvent::Searching(path) => {
             if verbosity() {
                 stdout.write_all(b"Searching: ")?;

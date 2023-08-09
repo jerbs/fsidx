@@ -18,8 +18,6 @@ pub enum LocateEvent<'a> {
     Entry(&'a Path, &'a Metadata),
     /// Query is processed completely.
     Finished,
-    /// Query is interrupted.
-    Interrupted,
     /// Starts evaluating a query against a database file.
     Searching(&'a Path),
     /// All entries in a database file are evaluated against the query.
@@ -39,8 +37,8 @@ pub enum LocateError {
     WritingResultFailed(std::io::Error),
     /// Database file was written with an incompatible (e.g. newer) fsidx version.
     UnsupportedFileFormat(PathBuf),
-    /// Query was interrupted.
-    Interrupted,
+    /// Query was aborted.
+    Aborted,
     /// Writing failed due to a broken pipe. This error is reported when the
     /// cli frontend is piping its output to another program which is
     /// terminated before reading the complete input.
@@ -61,7 +59,7 @@ pub struct Metadata {
 
 /// The locate function runs a query on all configured database files.
 ///
-/// The matching entries are reported with a callback function. The interrupt
+/// The matching entries are reported with a callback function. The abort
 /// parameter may be used by a frontend to abort a query.
 ///
 /// Design decision: The locate function is using a callback interface. This
@@ -74,7 +72,7 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
     volume_info: Vec<VolumeInfo>,
     filter: Vec<FilterToken>,
     config: &LocateConfig,
-    interrupt: Option<Arc<AtomicBool>>,
+    abort: Option<Arc<AtomicBool>>,
     mut f: F,
 ) -> Result<(), LocateError> {
     let filter = filter::compile(&filter, config);
@@ -84,7 +82,7 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
     let filter = filter?;
     for vi in &volume_info {
         f(LocateEvent::Searching(&vi.folder)).map_err(LocateError::WritingResultFailed)?;
-        let res = locate_volume(vi, &filter, &interrupt, &mut f);
+        let res = locate_volume(vi, &filter, &abort, &mut f);
         if let Err(ref err) = res {
             match err {
                 LocateError::WritingResultFailed(err) if err.kind() == ErrorKind::BrokenPipe => {
@@ -100,17 +98,17 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
 fn locate_volume<F: FnMut(LocateEvent) -> IOResult<()>>(
     volume_info: &VolumeInfo,
     filter: &CompiledFilter,
-    interrupt: &Option<Arc<AtomicBool>>,
+    abort: &Option<Arc<AtomicBool>>,
     f: &mut F,
 ) -> Result<(), LocateError> {
     let mut reader = FileIndexReader::new(&volume_info.database)?;
     loop {
-        if interrupt
+        if abort
             .as_ref()
             .map(|v| v.load(Ordering::Relaxed))
             .unwrap_or(false)
         {
-            return Err(LocateError::Interrupted);
+            return Err(LocateError::Aborted);
         }
         match reader.next_entry() {
             Ok(Some((path, metadata))) => {
@@ -226,7 +224,7 @@ impl Display for LocateError {
                 "Database has unsupported file format: '{}'",
                 path.to_string_lossy()
             )),
-            LocateError::Interrupted => f.write_str("Interrupted"),
+            LocateError::Aborted => f.write_str("Aborted"),
             LocateError::BrokenPipe => f.write_str("Boken pipe"),
             LocateError::GlobPatternError(glob, err) => {
                 f.write_fmt(format_args!("Glob pattern error for `{}`: {}", glob, err))
