@@ -13,8 +13,12 @@ use walkdir::WalkDir;
 
 type GroupedVolumes = Vec<Vec<VolumeInfo>>;
 
+/// The UpdateSink struct provides handles for the [update] function to write
+/// status and error messages.
 pub struct UpdateSink<'a> {
+    /// Handle used to write status messages.
     pub stdout: &'a mut dyn Write,
+    /// Handle used to write error messages.
     pub stderr: &'a mut dyn Write,
 }
 
@@ -23,6 +27,17 @@ enum Msg {
     Error(String),
 }
 
+/// The update function recursively scans multiple folders and updates database
+/// files with the retrieved information.
+///
+/// Settings define which information is written into the databas files.
+///
+/// The implementations uses multiple threads to scan folders on different
+/// physical devices in parallel.
+///
+/// The function prints progress messages and error messages into [UpdateSink].
+/// This redirection allows the calling application to decide about how to
+/// display these messages.
 pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings, sink: UpdateSink) {
     let grouped = group_volumes(volume_info);
     let mut handles = vec![];

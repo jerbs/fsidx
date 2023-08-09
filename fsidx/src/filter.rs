@@ -3,25 +3,39 @@ use crate::find::FindExt;
 use crate::locate::LocateError;
 use globset::{GlobBuilder, GlobMatcher};
 
+/// A locate data base query is defined as a sequence of FilterToken elements.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FilterToken {
+    /// Depending on the current mode this is either a plain text or a glob pattern.
     Text(String),
+    /// Enables case-sensitive matching for subsequent plain text or glob patterns.
     CaseSensitive,
+    /// Enables case-insensitive matching for subsequent plain text or glob patterns.
     CaseInSensitive, // default
-    AnyOrder,        // default
+    /// Subsequent plain text may appear in any order.
+    AnyOrder, // default
+    /// Subsequent plain text must appear in the same order.
     SameOrder,
+    /// Plain text and glob patterns are applies on the whole path.
     WholePath, // default
+    /// Plain text and glob patterns are applies on the last path element only.
     LastElement,
-    SmartSpaces(bool),      // default: on
+    /// If space, minus and underscore in plain text match each other and no character.
+    SmartSpaces(bool), // default: on
+    /// If an asterisk (*) in a glob expression is not matching a path separator (/).
     LiteralSeparator(bool), // default: off
-    WordBoundary(bool),     // default: off
+    /// If start and end of plain text must match on a word boundary.
+    WordBoundary(bool), // default: off
+    /// Sets the mode to auto. Depending on the String content subsequent Text items are used as plain text or as glob pattern.
     Auto,
+    /// Sets the mode to plain text. Subsequent Text items are used as plain text.
     Smart,
+    /// Sets the mode to glob. Subsequent Text items are used as glob pattern.
     Glob,
 }
 
 #[derive(Clone, Debug)]
-pub struct CompiledFilter {
+pub(crate) struct CompiledFilter {
     token: Vec<CompiledFilterToken>,
 }
 

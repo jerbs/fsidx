@@ -12,32 +12,66 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+/// LocateEvent indicates events to a callback function.
 pub enum LocateEvent<'a> {
+    /// A database entry that matches the query.
     Entry(&'a Path, &'a Metadata),
+    /// Query is processed completely.
     Finished,
+    /// Query is interrupted.
     Interrupted,
+    /// Starts evaluating a query against a database file.
     Searching(&'a Path),
+    /// All entries in a database file are evaluated against the query.
     SearchingFinished(&'a Path),
+    /// To be removed.
     SearchingFailed(&'a Path, &'a LocateError),
 }
 
+/// LocateError reports errors related to processing a query.
 #[derive(Debug)]
 pub enum LocateError {
+    /// File is not a database file.
     ExpectedFsdbFile(PathBuf),
+    /// Unexpected end of database file.
     UnexpectedEof(PathBuf),
+    /// Reading the database file failed.
     ReadingFileFailed(PathBuf, std::io::Error),
+    /// Writing results failed. Actually, the callback failed to write.
     WritingResultFailed(std::io::Error),
+    /// Database file was written with an incompatible (e.g. newer) fsidx version.
     UnsupportedFileFormat(PathBuf),
+    /// Query was interrupted.
     Interrupted,
+    /// Writing failed due to a broken pipe. This error is reported when the
+    /// cli frontend is piping its output to another program which is
+    /// terminated before reading the complete input.
     BrokenPipe,
+    /// Failed to compile a glob pattern.
     GlobPatternError(String, globset::Error),
+    /// Reports a trivial search query that will by definition not match any
+    /// database entry.
     Trivial,
 }
 
+/// Metadata of a single locate query result.
 pub struct Metadata {
+    /// File size. The field is optional, since the database file may not
+    /// contain the file sizes.
     pub size: Option<u64>,
 }
 
+/// The locate function runs a query on all configured database files.
+///
+/// The matching entries are reported with a callback function. The interrupt
+/// parameter may be used by a frontend to abort a query.
+///
+/// Design decision: The locate function is using a callback interface. This
+/// allows to use references. With an iterator interface this is not possible
+/// due to lifetime restrictions of Rust. The pathname is only available until
+/// the next database entry is validated against the search query. Providing
+/// an Iterator interface would require to return owned data. Allocating
+/// memory on the heap for every query result would be less efficient.
 pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
     volume_info: Vec<VolumeInfo>,
     filter: Vec<FilterToken>,
@@ -67,7 +101,7 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
     Ok(())
 }
 
-pub fn locate_volume<F: FnMut(LocateEvent) -> IOResult<()>>(
+fn locate_volume<F: FnMut(LocateEvent) -> IOResult<()>>(
     volume_info: &VolumeInfo,
     filter: &CompiledFilter,
     interrupt: &Option<Arc<AtomicBool>>,
@@ -97,7 +131,7 @@ pub fn locate_volume<F: FnMut(LocateEvent) -> IOResult<()>>(
     }
 }
 
-pub struct FileIndexReader {
+struct FileIndexReader {
     database: PathBuf,
     reader: BufReader<File>,
     path: Vec<u8>,
@@ -105,7 +139,7 @@ pub struct FileIndexReader {
 }
 
 impl FileIndexReader {
-    pub fn new(database: &Path) -> Result<FileIndexReader, LocateError> {
+    fn new(database: &Path) -> Result<FileIndexReader, LocateError> {
         let file = File::open(database)
             .map_err(|err| LocateError::ReadingFileFailed(database.to_owned(), err))?;
         let mut reader = BufReader::new(file);
@@ -132,7 +166,7 @@ impl FileIndexReader {
         })
     }
 
-    pub fn next_entry(&mut self) -> Result<Option<(&Path, Metadata)>, LocateError> {
+    fn next_entry(&mut self) -> Result<Option<(&Path, Metadata)>, LocateError> {
         let discard = match self.reader.read_vu64() {
             Ok(val) => val,
             Err(err) => match err.kind() {
