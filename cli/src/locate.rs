@@ -77,7 +77,7 @@ fn locate_filter(token: Vec<Token>) -> Result<Vec<FilterToken>, CliError> {
                 "word_boundary" | "b" => FilterToken::WordBoundary(true),
                 "no_word_boundary" | "B" => FilterToken::WordBoundary(false),
                 "auto" | "-0" => FilterToken::Auto,
-                "plain" | "-1" => FilterToken::Smart,
+                "plain" | "-1" => FilterToken::Plain,
                 "glob" | "-2" => FilterToken::Glob,
                 _ => {
                     return Err(CliError::InvalidLocateFilterOption(text));

@@ -29,7 +29,7 @@ pub enum FilterToken {
     /// Sets the mode to auto. Depending on the String content subsequent Text items are used as plain text or as glob pattern.
     Auto,
     /// Sets the mode to plain text. Subsequent Text items are used as plain text.
-    Smart,
+    Plain,
     /// Sets the mode to glob. Subsequent Text items are used as glob pattern.
     Glob,
 }
@@ -219,7 +219,7 @@ pub(crate) fn compile(
             FilterToken::Auto => {
                 mode = Mode::Auto;
             }
-            FilterToken::Smart => {
+            FilterToken::Plain => {
                 mode = Mode::Plain;
             }
             FilterToken::Glob => {
