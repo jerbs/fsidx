@@ -24,8 +24,6 @@ pub enum LocateEvent<'a> {
     Searching(&'a Path),
     /// All entries in a database file are evaluated against the query.
     SearchingFinished(&'a Path),
-    /// To be removed.
-    SearchingFailed(&'a Path, &'a LocateError),
 }
 
 /// LocateError reports errors related to processing a query.
@@ -89,12 +87,10 @@ pub fn locate<F: FnMut(LocateEvent) -> IOResult<()>>(
         let res = locate_volume(vi, &filter, &interrupt, &mut f);
         if let Err(ref err) = res {
             match err {
-                LocateError::Interrupted => return res,
                 LocateError::WritingResultFailed(err) if err.kind() == ErrorKind::BrokenPipe => {
                     return Err(LocateError::BrokenPipe)
                 }
-                err => f(LocateEvent::SearchingFailed(&vi.folder, err))
-                    .map_err(LocateError::WritingResultFailed)?,
+                _ => return res,
             }
         }
     }

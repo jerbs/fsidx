@@ -135,11 +135,6 @@ fn print_locate_result(stdout: &mut StandardStream, res: &LocateEvent) -> IOResu
                 stdout.write_all(b" finished\n")?;
             }
         }
-        LocateEvent::SearchingFailed(path, error) => {
-            stdout.write_all(b"Searching ")?;
-            stdout.write_all(path.as_os_str().as_bytes())?;
-            stdout.write_fmt(format_args!(" failed: {}\n", error))?;
-        }
     }
     Ok(())
 }
