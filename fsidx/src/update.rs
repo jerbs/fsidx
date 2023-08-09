@@ -5,26 +5,33 @@ use nix::sys::stat::stat;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{Error, ErrorKind, Result, Write};
-use std::path::Path;
+use std::io::{Error, Result as IOResult, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Sender};
 use std::thread::{self};
 use walkdir::WalkDir;
 
 type GroupedVolumes = Vec<Vec<VolumeInfo>>;
 
-/// The UpdateSink struct provides handles for the [update] function to write
-/// status and error messages.
-pub struct UpdateSink<'a> {
-    /// Handle used to write status messages.
-    pub stdout: &'a mut dyn Write,
-    /// Handle used to write error messages.
-    pub stderr: &'a mut dyn Write,
-}
-
-enum Msg {
-    Info(String),
-    Error(String),
+/// UpdateEvent indicate events to a callback function.
+#[derive(Debug)]
+pub enum UpdateEvent {
+    /// Starts scanning a configured folder.
+    Scanning(PathBuf),
+    /// Finishs scanning a configured folder.
+    ScanningFinished(PathBuf),
+    /// Scanning failed. Database for this folder was not updated.
+    ScanningFailed(PathBuf),
+    /// Writing the database file failed.
+    DbWriteError(PathBuf, Error),
+    /// Moving the temporary database file to its final location failed.
+    ReplacingDatabaseFailed(PathBuf, PathBuf, Error),
+    /// Removing the temporary database file failed.
+    RemovingTemporaryFileFailed(PathBuf, Error),
+    /// Creating the temporary database file failed.
+    CreatingTemporaryFileFailed(PathBuf, Error),
+    /// Scanning the directory tree failed.
+    ScanError(PathBuf, walkdir::Error),
 }
 
 /// The update function recursively scans multiple folders and updates database
@@ -38,7 +45,11 @@ enum Msg {
 /// The function prints progress messages and error messages into [UpdateSink].
 /// This redirection allows the calling application to decide about how to
 /// display these messages.
-pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings, sink: UpdateSink) {
+pub fn update<F: FnMut(UpdateEvent) -> IOResult<()>>(
+    volume_info: Vec<VolumeInfo>,
+    settings: Settings,
+    mut f: F,
+) {
     let grouped = group_volumes(volume_info);
     let mut handles = vec![];
     let (tx, rx) = channel();
@@ -54,11 +65,8 @@ pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings, sink: UpdateSink
     loop {
         let recv = rx.recv();
         match recv {
-            Ok(Msg::Info(text)) => {
-                let _ = writeln!(sink.stdout, "{}", text);
-            }
-            Ok(Msg::Error(text)) => {
-                let _ = writeln!(sink.stderr, "Error: {}", text);
+            Ok(event) => {
+                let _ = f(event);
             }
             Err(_) => {
                 break;
@@ -72,7 +80,6 @@ pub fn update(volume_info: Vec<VolumeInfo>, settings: Settings, sink: UpdateSink
 
 fn group_volumes(volume_info: Vec<VolumeInfo>) -> GroupedVolumes {
     let mut map = BTreeMap::<i32, Vec<VolumeInfo>>::new();
-
     for vi in volume_info {
         let st = stat(&vi.folder);
         if let Ok(f_stat) = st {
@@ -80,65 +87,77 @@ fn group_volumes(volume_info: Vec<VolumeInfo>) -> GroupedVolumes {
             map.entry(dev).or_default().push(vi);
         }
     }
-
     map.values().cloned().collect()
 }
 
-fn update_volume_group(group: Vec<VolumeInfo>, settings: Settings, tx: Sender<Msg>) {
+fn update_volume_group(group: Vec<VolumeInfo>, settings: Settings, tx: Sender<UpdateEvent>) {
     for volume_info in group {
         update_volume(volume_info, settings.clone(), &tx);
     }
 }
 
-fn update_volume(volume_info: VolumeInfo, settings: Settings, tx: &Sender<Msg>) {
-    let _ = tx.send(Msg::Info(format!(
-        "Scanning: {}",
-        volume_info.folder.display()
-    )));
-
-    if let Err(err) = update_volume_impl(&volume_info, settings, tx) {
-        let _ = tx.send(Msg::Error(format!("Error: {}", err)));
-        let _ = tx.send(Msg::Error(format!(
-            "Scanning failed: {}",
-            volume_info.folder.display()
-        )));
+fn update_volume(volume_info: VolumeInfo, settings: Settings, tx: &Sender<UpdateEvent>) {
+    let _ = tx.send(UpdateEvent::Scanning(volume_info.folder.clone()));
+    if update_volume_impl(&volume_info, settings, tx) {
+        // Database file is updated.
+        let _ = tx.send(UpdateEvent::ScanningFinished(volume_info.folder.clone()));
     } else {
-        let _ = tx.send(Msg::Info(format!(
-            "Finished: {}",
-            volume_info.folder.display()
-        )));
+        // Database file is not updated.
+        let _ = tx.send(UpdateEvent::ScanningFailed(volume_info.folder.clone()));
     }
 }
 
 fn update_volume_impl(
     volume_info: &VolumeInfo,
     settings: Settings,
-    tx: &Sender<Msg>,
-) -> Result<()> {
+    tx: &Sender<UpdateEvent>,
+) -> bool {
     let db_file_name = &volume_info.database;
     let mut tmp_file_name = db_file_name.clone();
     tmp_file_name.set_extension("~");
 
-    let mut file = File::create(&tmp_file_name)?;
+    let mut file = match File::create(&tmp_file_name) {
+        Ok(file) => file,
+        Err(err) => {
+            let _ = tx.send(UpdateEvent::CreatingTemporaryFileFailed(tmp_file_name, err));
+            return false;
+        }
+    };
     let result = scan_folder(&mut file, &volume_info.folder, settings, tx);
     drop(file); // close file
 
     match result {
-        Ok(_) => fs::rename(&tmp_file_name, db_file_name)?,
-        Err(_) => fs::remove_file(&tmp_file_name)?,
+        Ok(_) => {
+            if let Err(err) = fs::rename(&tmp_file_name, db_file_name) {
+                let _ = tx.send(UpdateEvent::ReplacingDatabaseFailed(
+                    tmp_file_name,
+                    db_file_name.clone(),
+                    err,
+                ));
+                false
+            } else {
+                true
+            }
+        }
+        Err(err) => {
+            let _ = tx.send(UpdateEvent::DbWriteError(volume_info.database.clone(), err));
+            if let Err(err) = fs::remove_file(&tmp_file_name) {
+                let _ = tx.send(UpdateEvent::RemovingTemporaryFileFailed(tmp_file_name, err));
+            }
+            false
+        }
     }
-
-    result
 }
 
 fn scan_folder(
     mut writer: &mut dyn Write,
     folder: &Path,
     settings: Settings,
-    tx: &Sender<Msg>,
-) -> Result<()> {
+    tx: &Sender<UpdateEvent>,
+) -> IOResult<()> {
+    // An Err(_) return value always indicates that writing the database file failed.
+    // When scanning the folder fails the error is sent as an event.
     let flags: &[u8] = &[settings.clone() as u8];
-
     // The written file should be removed when this function returns an Err.
     // Either the device was not mounted (ErrorKind::NotFound) or writing the
     // file failed, i.e. the file content is corrupt.
@@ -150,10 +169,8 @@ fn scan_folder(
             Ok(entry) => {
                 let bytes = byte_slice(entry.path());
                 let (discard, delta) = delta_encode(&previous, bytes);
-
                 // println!("{}: {}", discard, String::from_utf8_lossy(delta));
                 // println!("{}: {}", bytes.len(), entry.path().display());
-
                 writer.write_vu64(discard as u64)?;
                 writer.write_vu64(delta.len() as u64)?;
                 writer.write_all(delta)?;
@@ -170,31 +187,9 @@ fn scan_folder(
                 previous = bytes.to_vec();
             }
             Err(error) => {
-                let depth = error.depth();
-                if let Some(io_error) = error.io_error() {
-                    // capture.error(&format!("io error: {:?}", io_error.kind()));
-                    if io_error.kind() == std::io::ErrorKind::NotFound && depth == 0 {
-                        // The toplevel entry directory does not exist.
-                        // Assuming that the device is not mounted.
-                        // Stop scanning and remove the temporary TPdb file.
-                        return Err(Error::new(ErrorKind::NotFound, "Device not mounted"));
-
-                        // Note: I have seen the NotFound error for netatalk mounted directory
-                        //       name with non ascii characters.
-                    }
-                }
-                match error.path() {
-                    Some(path) => {
-                        let _ = tx.send(Msg::Error(format!(
-                            "Error: {} on path {}",
-                            error,
-                            path.display()
-                        )));
-                    }
-                    None => {
-                        let _ = tx.send(Msg::Error(format!("Error: {}", error)));
-                    }
-                }
+                // This function is not called if a folder is not mounted.
+                // Unmounted volumes are already filtered ou by group_volumes.
+                let _ = tx.send(UpdateEvent::ScanError(folder.to_path_buf(), error));
             }
         }
     }

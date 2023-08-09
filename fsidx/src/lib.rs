@@ -12,4 +12,4 @@ pub use config::VolumeInfo;
 pub use config::{LocateConfig, Mode, Order, Settings, What};
 pub use filter::FilterToken;
 pub use locate::{locate, LocateError, LocateEvent, Metadata};
-pub use update::{update, UpdateSink};
+pub use update::{update, UpdateEvent};
