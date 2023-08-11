@@ -11,11 +11,13 @@ use fsidx::LocateError;
 use rustyline::completion::Completer;
 use rustyline::config::Config as RlConfig;
 use rustyline::error::ReadlineError;
+use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::Editor;
-use rustyline::{Helper, Highlighter, Validator};
+use rustyline::{Helper, Validator};
 use signal_hook::consts::signal::SIGINT;
 use signal_hook::iterator::Signals;
+use std::borrow::Cow;
 use std::env::Args;
 use std::io::{stderr, stdout, Result as IOResult, Write};
 use std::os::unix::prelude::OsStrExt;
@@ -129,7 +131,7 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
     Ok(())
 }
 
-#[derive(Helper, Highlighter, Validator)]
+#[derive(Helper, Validator)]
 struct ShellHelper {}
 
 const LONG_OPTIONS: [&str; 15] = [
@@ -202,6 +204,15 @@ impl Completer for ShellHelper {
     ) {
         let end = line.pos();
         line.replace(start..end, elected, cl);
+    }
+}
+
+impl Highlighter for ShellHelper {
+    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
+        let mut highlighted = String::from("\x1B[2m");
+        highlighted.push_str(hint);
+        highlighted.push_str("\x1B[0m");
+        Cow::Owned(highlighted)
     }
 }
 
