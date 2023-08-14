@@ -3,3 +3,4 @@ members = ["cli", "fsidx"]
 
 [patch.crates-io]
 fsidx = { path = 'fsidx' }
+rustyline = { git = "https://github.com/jerbs/rustyline.git", branch = "master" }
