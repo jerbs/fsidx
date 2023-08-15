@@ -79,11 +79,11 @@ pub fn update<F: FnMut(UpdateEvent) -> IOResult<()>>(
 }
 
 fn group_volumes(volume_info: Vec<VolumeInfo>) -> GroupedVolumes {
-    let mut map = BTreeMap::<i32, Vec<VolumeInfo>>::new();
+    let mut map = BTreeMap::<_, Vec<VolumeInfo>>::new();
     for vi in volume_info {
         let st = stat(&vi.folder);
         if let Ok(f_stat) = st {
-            let dev = f_stat.st_dev;
+            let dev = f_stat.st_dev; // MacOS: i32, Linux: u64
             map.entry(dev).or_default().push(vi);
         }
     }
