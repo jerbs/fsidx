@@ -81,11 +81,11 @@ The **locate** subcommand uses a search query to find matching path names in the
 **`-l`**, **`--last_element`**
 :   Plain text and glob patterns are applied on the last element of the path name only, i.e. on the file name or directory name without any parent directory names.
 
-**`-s`**. **`--smart_spaces`** (default)
-:   Spaces in quoted plain text do match with any white space, minus characters, underscore characters or with no character at all.
+**`-s`**. **`--smart_spaces`** (default) 
+:   Spaces in quoted plain text do match with any white space, minus characters, underscore characters or with no character at all. Instead of quoted text it is also possible to use CamelCase to create an equivalent search query.
 
 **`-S`**, **`--no_smart_spaces`**
-:   Spaces in quoted plain text are handled as every other character.
+:   Spaces in quoted plain text are handled as every other character. Also no special handling for CamelCase query text.
 
 **`-b`**, **`--word_boundary`**
 :   Enables that tokens must start and end on word boundaries. Letters and numbers are evaluated. If a token starts/ends with a letter the preceeding/succeeding character in a match must not be a letter. The same is true for numbers. A number next to a letter is considered as a word boundary. An upper case letter following on a lower case letter is considered as a word boundary.
@@ -191,6 +191,9 @@ Some **fsidx** shell command examples:
 
 **`-b "Anne Miller"`**
 :   Here the word boundary feature is enabled in addition. Now the first and the last letter of token "Anna Miller" must be at a word boundary. No further letter is allowed in front of the 'A' and after the 'r'. This excludes "Suzanna Miller" from the results.
+
+**`AnneMiller`**
+:   When smart spaces are enabled, then this is equivalent to `"Anne Miller"`. Camel case query texts result in smart space queries.
 
 **`time -l out -c -w /Jazz/ *.flac`**
 :   This query searches for flac-files in or below a 'Jazz' folder. The character sequence 'time' must occur somewhere in the pathname. The character sequence 'out' must occur in the file name, because the option last_element (-l) is activated. With option whole_path (-w) this is disabled again and '/Jazz/' is searched in the complete pathname.

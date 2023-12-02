@@ -422,6 +422,7 @@ mod tests {
         assert_eq!("foo bar".find_word_start_boundary(1), Some(4));
         assert_eq!("Foobar".find_word_start_boundary(1), None);
         assert_eq!("FooBar".find_word_start_boundary(1), Some(3));
+        assert_eq!("FooBar".find_word_start_boundary(3), Some(3));
         assert_eq!("Foo123".find_word_start_boundary(1), Some(3));
         assert_eq!("123Foo".find_word_start_boundary(1), Some(3));
     }

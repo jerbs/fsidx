@@ -127,6 +127,24 @@ pub(crate) fn compile(
                     } else {
                         vec![text.clone()]
                     };
+                    let fragments = if options.smart_spaces {
+                        // Camel case in the query results in smart spaces.
+                        let mut tmp = Vec::new();
+                        for fragment in &fragments {
+                            let frag = fragment.as_str();
+                            let mut pos = 0;
+                            while let Some(pos_word_boundary) =
+                                frag.find_word_start_boundary(pos + 1)
+                            {
+                                tmp.push(String::from(&frag[pos..pos_word_boundary]));
+                                pos = pos_word_boundary;
+                            }
+                            tmp.push(String::from(&frag[pos..]));
+                        }
+                        tmp
+                    } else {
+                        fragments
+                    };
                     let mut it = fragments.into_iter();
                     if let Some(fragment) = it.next() {
                         if options.word_boundaries {
@@ -787,6 +805,22 @@ mod tests {
                 CompiledFilterToken::ExpectCaseInsensitive("D".to_string()),
                 CompiledFilterToken::GoToStart,
                 CompiledFilterToken::FindCaseInsensitive("E".to_string()),
+            ],
+        };
+        // Can't use assert_eq! here, since PartialEq is not implemented for GlobMatcher.
+        check_compiled_filter(actual, expected);
+    }
+
+    #[test]
+    fn compile_text_with_camel_case() {
+        let config = LocateConfig::default();
+        let actual = compile(&[t("FooBar")], &config).unwrap();
+        let expected = CompiledFilter {
+            token: vec![
+                CompiledFilterToken::GoToStart,
+                CompiledFilterToken::FindCaseInsensitive("FOO".to_string()),
+                CompiledFilterToken::SkipSmartSpace,
+                CompiledFilterToken::ExpectCaseInsensitive("BAR".to_string()),
             ],
         };
         // Can't use assert_eq! here, since PartialEq is not implemented for GlobMatcher.
