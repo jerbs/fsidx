@@ -150,12 +150,12 @@ mod tests {
             ]
 
             [locate]
-            case_sensitive = false
-            order = "any_order"
-            what = "whole_path"
-            smart_spaces = true
-            word_boundaries = false
-            literal_separator = false
+            case-sensitive = false
+            order = "any-order"
+            what = "whole-path"
+            smart-spaces = true
+            word-boundaries = false
+            literal-separator = false
             mode = "auto"
             "#};
         let config: Config = parse_content(data).unwrap();
@@ -205,12 +205,12 @@ mod tests {
             folder = ["~/Music", "/Volumes/Music"]
 
             [locate]
-            case_sensitive = true
-            order = "any_order"
-            what = "whole_path"
-            smart_spaces = true
-            word_boundaries = false
-            literal_separator = false
+            case-sensitive = true
+            order = "any-order"
+            what = "whole-path"
+            smart-spaces = true
+            word-boundaries = false
+            literal-separator = false
             mode = "auto"
             "#};
         assert_eq!(toml, expected);

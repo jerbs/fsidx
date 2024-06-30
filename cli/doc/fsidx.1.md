@@ -63,40 +63,40 @@ The **locate** subcommand uses a search query to find matching path names in the
 
 **locate** supports the following options:
 
-**`-c`**, **`--case_sensitive`**
+**`-c`**, **`--case-sensitive`**
 :   Case-sensitive matching for plain text and glob patterns.
 
-**`-i`**, **`-case_insensitive`** (default)
+**`-i`**, **`-case-insensitive`** (default)
 :   Case-insensitive matching for plain text and glob patterns.
 
-**`-a`**, **`--any_order`** (default)
+**`-a`**, **`--any-order`** (default)
 :   Searching for subsequent plain text elements always starts at the beginning. Esentially, this means that plain text elements may appear in any order in the path name.
 
-**`-o`**, **`--same_order`**
+**`-o`**, **`--same-order`**
 :   Searching for subsequent plain text elements always starts after the previous match. Esentially, this means that plain text elements must occurr in the same order in the path name.
 
-**`-w`**, **`--whole_path`** (default)
+**`-w`**, **`--whole-path`** (default)
 :   Plain text and glob patterns are applied on the while path name starting from root.
 
-**`-l`**, **`--last_element`**
+**`-l`**, **`--last-element`**
 :   Plain text and glob patterns are applied on the last element of the path name only, i.e. on the file name or directory name without any parent directory names.
 
-**`-s`**. **`--smart_spaces`** (default) 
+**`-s`**. **`--smart-spaces`** (default) 
 :   Spaces in quoted plain text do match with any white space, minus characters, underscore characters or with no character at all. Instead of quoted text it is also possible to use CamelCase to create an equivalent search query.
 
-**`-S`**, **`--no_smart_spaces`**
+**`-S`**, **`--no-smart-spaces`**
 :   Spaces in quoted plain text are handled as every other character. Also no special handling for CamelCase query text.
 
-**`-b`**, **`--word_boundary`**
+**`-b`**, **`--word-boundary`**
 :   Enables that tokens must start and end on word boundaries. Letters and numbers are evaluated. If a token starts/ends with a letter the preceeding/succeeding character in a match must not be a letter. The same is true for numbers. A number next to a letter is considered as a word boundary. An upper case letter following on a lower case letter is considered as a word boundary.
 
-**`-B`**, **`--no_word_boundary`**
+**`-B`**, **`--no-word-boundary`**
 :   Disables matching on word boundaries only.
 
-**`--ls`**, **`--literal_separator`**
+**`--ls`**, **`--literal-separator`**
 :   In glob patterns wildcards (*) do not match path separators (/).
 
-**`--nls`**, **`--no_literal_separator`** (default)
+**`--nls`**, **`--no_literal-separator`** (default)
 :   In glob patterns wildcards (*) match path separators (/).
 
 **`-0`**, **`--auto`** (default)

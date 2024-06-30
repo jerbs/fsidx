@@ -24,6 +24,7 @@ pub enum Settings {
 /// Default configuration for locate queries.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
+#[serde(rename_all = "kebab-case")]
 pub struct LocateConfig {
     /// Case-sensitivity.
     #[serde(default = "default_case_sensitive")]
@@ -67,7 +68,7 @@ fn default_literal_separator() -> bool {
 /// Defines in which order plain text must appear in the pathname.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub enum Order {
     /// Plain text may appear in any order.
     #[default]
@@ -79,7 +80,7 @@ pub enum Order {
 /// Defines which parts of the pathname are used to match plain text and glob patterns.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub enum What {
     /// The whole path is used.
     #[default]
@@ -92,7 +93,7 @@ pub enum What {
 /// filter elements are used.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy, Default)]
 #[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "kebab-case")]
 pub enum Mode {
     /// Glob patterns are autodetected.
     #[default]

@@ -24,22 +24,22 @@ The index table defines the folders for which database files are created and whe
 ## locate
 The locate table is optional and may define alternative defaults for the **fsidx locate** command.
 
-**case_sensitive**
+**case-sensitive**
 :   Allowed values are **true** and **false** (default).
 
 **order**
-:   Allowed values are **"any_order"** (default) and **"same_order"**.
+:   Allowed values are **"any-order"** (default) and **"same-order"**.
 
 **what**
-:   Allowed values are **"whole_path"** (default) and **"last_element"**.
+:   Allowed values are **"whole-path"** (default) and **"last-element"**.
 
-**smart_spaces**
+**smart-spaces**
 :   Allowed values are **true** (default) and **false**.
 
-**word_boundaries**
+**word-boundaries**
 :   Allowed values are **true** and **false** (default).
 
-**literal_separator**
+**literal-separator**
 :   Allowed values are **true** and **false** (default).
 
 **mode**
@@ -58,12 +58,12 @@ Refer to the **fsidx(1)** man page for a detailed description of the locate opti
     ]
 
     [locate]
-    case_sensitive = false
-    order = "any_order"
-    what = "whole_path"
-    smart_spaces = true
-    word_boundaries = false
-    literal_separator = false
+    case-sensitive = false
+    order = "any-order"
+    what = "whole-path"
+    smart-spaces = true
+    word-boundaries = false
+    literal-separator = false
     mode = "auto"
 
 # SEE ALSO

@@ -135,21 +135,21 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
 struct ShellHelper {}
 
 const LONG_OPTIONS: [&str; 15] = [
-    "--case_sensitive ",
-    "--case_insensitive ",
+    "--case-sensitive ",
+    "--case-insensitive ",
     "--plain ",
     "--glob ",
     "--auto ",
-    "--same_order ",
-    "--any_order ",
-    "--last_element ",
-    "--whole_path ",
-    "--no_smart_spaces ",
-    "--smart_spaces ",
-    "--word_boundary ",
-    "--no_word_boundary ",
-    "--literal_separator ",
-    "--no_literal_separator ",
+    "--same-order ",
+    "--any-order ",
+    "--last-element ",
+    "--whole-path ",
+    "--no-smart-spaces ",
+    "--smart-spaces ",
+    "--word-boundary ",
+    "--no-word-boundary ",
+    "--literal-separator ",
+    "--no-literal-separator ",
 ];
 
 impl Hinter for ShellHelper {
