@@ -1,6 +1,6 @@
 % FSIDX.TOML(5) fsidx.toml 0.1.0
 % Joachim Erbs
-% August 5, 2023
+% June 30, 2024
 
 # NAME
 fsidx.toml -- find filenames quickly
@@ -70,4 +70,4 @@ Refer to the **fsidx(1)** man page for a detailed description of the locate opti
 fsidx(1)
 
 # COPYRIGHT
-Copyright ©  2023 Joachim Erbs
+Copyright ©  2024 Joachim Erbs

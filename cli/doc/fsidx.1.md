@@ -1,6 +1,6 @@
 % FSIDX(1) fsidx 0.1.0
 % Joachim Erbs
-% August 5, 2023
+% June 30, 2024
 
 # NAME
 fsidx - find filenames quickly
@@ -259,4 +259,4 @@ Pitfalls:
 fsidx.toml(5), locate(1)
 
 # COPYRIGHT
-Copyright ©  2023 Joachim Erbs
+Copyright ©  2023-2024 Joachim Erbs
