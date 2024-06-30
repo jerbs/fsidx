@@ -72,7 +72,7 @@ The **locate** subcommand uses a search query to find matching path names in the
 **`-a`**, **`--any_order`** (default)
 :   Searching for subsequent plain text elements always starts at the beginning. Esentially, this means that plain text elements may appear in any order in the path name.
 
-**`-s`**, **`--same_order`**
+**`-o`**, **`--same_order`**
 :   Searching for subsequent plain text elements always starts after the previous match. Esentially, this means that plain text elements must occurr in the same order in the path name.
 
 **`-w`**, **`--whole_path`** (default)

@@ -75,7 +75,7 @@ pub(crate) fn help_shell_long() -> Result<(), CliError> {
         "\n",
         "Options for plain text:\n",
         "    -a | --any_order         Plain text may match in any order (default)\n",
-        "    -s | --same_order        Plain text must appear in same order\n",
+        "    -o | --same_order        Plain text must appear in same order\n",
         "    -w | --whole_path        Pattern is applied on whole path (default)\n",
         "    -l | --last_element      Pattern is applied on last element\n",
         "    -s | --smart_spaces      Space, dash and underscore match each other (default)\n",
