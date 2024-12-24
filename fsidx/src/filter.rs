@@ -268,14 +268,7 @@ pub(crate) fn apply(text: &str, filter: &CompiledFilter) -> bool {
     let mut has_matched_glob = false;
     while state.filter_index < filter.token.len() {
         let token = &filter.token[state.filter_index];
-        if let CompiledFilterToken::FindCaseInsensitive(_) = token {
-            back_tracking = state;
-        } else if let CompiledFilterToken::FindCaseSensitive(_) = token {
-            back_tracking = state;
-        } else if let CompiledFilterToken::FindWordStartBoundary = token {
-            back_tracking = state;
-        }
-        state.filter_index += 1;
+        let mut fallback = false;
         match token {
             CompiledFilterToken::GoToStart => {
                 state.pos = 0;
@@ -321,6 +314,7 @@ pub(crate) fn apply(text: &str, filter: &CompiledFilter) -> bool {
             CompiledFilterToken::FindCaseInsensitive(pattern) => {
                 if let Some(range) = text.find_case_insensitive(state.pos, pattern) {
                     state.pos = range.end;
+                    back_tracking = state;
                 } else {
                     return false;
                 }
@@ -328,6 +322,7 @@ pub(crate) fn apply(text: &str, filter: &CompiledFilter) -> bool {
             CompiledFilterToken::FindCaseSensitive(pattern) => {
                 if let Some(range) = text.find_case_sensitive(state.pos, pattern) {
                     state.pos = range.end;
+                    back_tracking = state;
                 } else {
                     return false;
                 }
@@ -335,6 +330,8 @@ pub(crate) fn apply(text: &str, filter: &CompiledFilter) -> bool {
             CompiledFilterToken::FindWordStartBoundary => {
                 if let Some(pos) = text.find_word_start_boundary(state.pos) {
                     state.pos = pos;
+                    back_tracking = state;
+                    back_tracking.pos = text.skip_character(back_tracking.pos);
                 } else {
                     return false;
                 }
@@ -346,30 +343,29 @@ pub(crate) fn apply(text: &str, filter: &CompiledFilter) -> bool {
                 if let Some(range) = text.tag_case_insensitive(state.pos, pattern) {
                     state.pos = range.end;
                 } else {
-                    state = State {
-                        filter_index: back_tracking.filter_index,
-                        pos: text.skip_character(back_tracking.pos),
-                    };
+                    fallback = true;
                 }
             }
             CompiledFilterToken::ExpectCaseSensitive(pattern) => {
                 if let Some(range) = text.tag_case_sensitive(state.pos, pattern) {
                     state.pos = range.end;
                 } else {
-                    state = State {
-                        filter_index: back_tracking.filter_index,
-                        pos: text.skip_character(back_tracking.pos),
-                    };
+                    fallback = true;
                 }
             }
             CompiledFilterToken::ExpectWordEndBoundary => {
                 if !text.tag_word_end_boundary(state.pos) {
-                    state = State {
-                        filter_index: back_tracking.filter_index,
-                        pos: text.skip_character(back_tracking.pos),
-                    };
+                    fallback = true;
                 }
             }
+        }
+        if fallback {
+            state = State {
+                filter_index: back_tracking.filter_index,
+                pos: back_tracking.pos,
+            };
+        } else {
+            state.filter_index += 1;
         }
     }
     !has_glob || has_matched_glob
@@ -1179,6 +1175,54 @@ mod tests {
             apply(
                 "abc123def456",
                 &compile(&[FilterToken::WordBoundary(true), t("ef")], &config).unwrap()
+            ),
+            false
+        );
+    }
+
+    #[test]
+    fn test_backtracking() {
+        let config = LocateConfig::default();
+        assert_eq!(
+            apply(
+                "0123456789A-BCD",
+                &compile(&[FilterToken::SameOrder, t("A-BCD")], &config).unwrap()
+            ),
+            true
+        );
+    }
+
+    #[test]
+    fn test_backtrackin2() {
+        let config = LocateConfig::default();
+        assert_eq!(
+            apply(
+                "0123456789A-A-BCD",
+                &compile(&[FilterToken::SameOrder, t("A-BCD")], &config).unwrap()
+            ),
+            true
+        );
+    }
+
+    #[test]
+    fn test_backtracking3() {
+        let config = LocateConfig::default();
+        assert_eq!(
+            apply(
+                "0123456789AA-BCD",
+                &compile(&[FilterToken::SameOrder, t("A-BCD")], &config).unwrap()
+            ),
+            true
+        );
+    }
+
+    #[test]
+    fn test_backtracking_not_matching() {
+        let config = LocateConfig::default();
+        assert_eq!(
+            apply(
+                "0123456789AA-BCE",
+                &compile(&[FilterToken::SameOrder, t("A-BCD")], &config).unwrap()
             ),
             false
         );
