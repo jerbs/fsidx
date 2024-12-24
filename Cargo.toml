@@ -2,5 +2,8 @@
 resolver = "2"
 members = ["cli", "fsidx"]
 
+[workspace.dependencies]
+nix = { version = "0.29.0", features = [ "fs", "term" ] }
+
 [patch.crates-io]
 fsidx = { path = 'fsidx' }

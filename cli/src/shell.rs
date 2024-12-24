@@ -71,7 +71,7 @@ pub(crate) fn shell(config: Config, args: &mut Args) -> Result<(), CliError> {
     let history = if let Some(db_path) = &config.index.db_path {
         let history = Path::new(&db_path).join("history.txt");
         if let Err(err) = rl.load_history(&history) {
-            if matches!(err, ReadlineError::Errno(nix::Error::ENOENT)) {
+            if matches!(err, ReadlineError::Errno(nix::errno::Errno::ENOENT)) {
                 print_error();
                 eprintln!("Reading '{}' failed: {}", history.display(), err);
             }

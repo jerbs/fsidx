@@ -1,11 +1,8 @@
 use nix::sys::termios::{self, LocalFlags, SetArg};
 use std::io::Result;
-use std::os::unix::io::RawFd;
-
-const STDIN_FILENO: RawFd = libc::STDIN_FILENO;
 
 pub fn set_tty() -> Result<()> {
-    let original_mode = termios::tcgetattr(STDIN_FILENO)?;
+    let original_mode = termios::tcgetattr(std::io::stdin())?;
     let mut raw = original_mode.clone();
 
     // Disable ECHO.
@@ -17,7 +14,7 @@ pub fn set_tty() -> Result<()> {
     // I.e. some characters/lines are missing and output is corrupted.
     raw.local_flags |= LocalFlags::NOFLSH;
 
-    termios::tcsetattr(STDIN_FILENO, SetArg::TCSADRAIN, &raw)?;
+    termios::tcsetattr(std::io::stdin(), SetArg::TCSADRAIN, &raw)?;
 
     Ok(())
 }
