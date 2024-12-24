@@ -155,21 +155,22 @@ const LONG_OPTIONS: [&str; 15] = [
 impl Hinter for ShellHelper {
     type Hint = String;
 
-    fn hint(&self, line: &str, pos: usize, _ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
-        let start = start_position(line, pos);
-        let partial = &line[start..pos];
-        if partial.is_empty() {
-            return None;
-        }
-        if let Some(first) = LONG_OPTIONS
-            .into_iter()
-            .find(|cand| cand.starts_with(partial))
-        {
-            let hint = first[pos - start..].to_string();
-            Some(hint)
-        } else {
-            None
-        }
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
+        // let start = start_position(line, pos);
+        // let partial = &line[start..pos];
+        // if partial.is_empty() {
+        //     return None;
+        // }
+        // if let Some(first) = LONG_OPTIONS
+        //     .into_iter()
+        //     .find(|cand| cand.starts_with(partial))
+        // {
+        //     let hint = first[pos - start..].to_string();
+        //     Some(hint)
+        // } else {
+        //     None
+        // }
+        None
     }
 }
 
