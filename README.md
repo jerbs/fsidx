@@ -11,16 +11,17 @@ The **`fsidx`** program provides fast pathname searching using database files. *
 
 Main features are:
 
-- Own shell with history, completions and hints
-- Opening query results with default applications
 - Creating database files with file names and sizes
-- Searching unmounted media
+- Searching file names in the database files
+- Searching unmounted file systems
+- Own shell with history and completions
+- Opening query results with default applications
 - Glob patterns
 - Plain text search
 - Case-sensitive and case-insensitive search
 - Same order or any order search
 - Whole path or last element search
-- Smart spaces matching
+- Smart space matching
 - Word boundary matching
 - TOML configuration file
 
@@ -96,8 +97,6 @@ A glob pattern can also be used to open selected files from the last query resul
 ## Installation
 
 The program supports Linux and MacOS. 
-pandoc
-
 
 ```shell
 $ make install prefix=$HOME
