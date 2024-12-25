@@ -11,13 +11,13 @@ keywords = ["locate"]
 [dependencies]
 clap = "4.3.11"
 fsidx = {version = "0.1.0", path = "../fsidx" }
-globset = "0.4.11"
+globset = { workspace = true }
 indoc = "2.0.2"
 libc = "0.2.117"
 nix = { workspace = true }
 nom = "7.1.3"
 rustyline = { version = "15.0.0", features = ["derive"] }
-serde = { version = "1.0.133", features = ["derive"] }
+serde = { workspace = true }
 signal-hook = "0.3.13"
 termcolor = "1.1.2"
 toml = "0.8.19"

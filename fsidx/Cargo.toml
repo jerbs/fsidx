@@ -10,11 +10,11 @@ keywords = ["locate"]
 
 [dependencies]
 fastvlq = "1.1.1"
-globset = "0.4.10"
+globset = { workspace = true }
 natord = "1.0.9"
 nix = { workspace = true }
 num_cpus = "1.13.1"
 num_enum = "0.7.3"
-serde = { version = "1.0.133", features = ["derive"] }
+serde = { workspace = true }
 threadpool = "1.8.1"
 walkdir = "2.3.1"
