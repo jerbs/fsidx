@@ -14,7 +14,7 @@ globset = "0.4.10"
 natord = "1.0.9"
 nix = { workspace = true }
 num_cpus = "1.13.1"
-num_enum = "0.6.1"
+num_enum = "0.7.3"
 serde = { version = "1.0.133", features = ["derive"] }
 threadpool = "1.8.1"
 walkdir = "2.3.1"
