@@ -1193,7 +1193,7 @@ mod tests {
     }
 
     #[test]
-    fn test_backtrackin2() {
+    fn test_backtracking2() {
         let config = LocateConfig::default();
         assert_eq!(
             apply(

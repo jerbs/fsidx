@@ -3,4 +3,13 @@
         "editor.defaultFormatter": "rust-lang.rust-analyzer", 
         "editor.formatOnSave": true 
     },
+    "cSpell.words": [
+        "dbpath",
+        "Erbs",
+        "flac",
+        "fsdb",
+        "fsidx",
+        "pathnames",
+        "Suzanna"
+    ],
 }

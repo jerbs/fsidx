@@ -5,7 +5,7 @@
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://github.com/tokio-rs/tokio/blob/master/LICENSE
 
-The **`fsidx`** program provides fast pathname searching using database files. *fsidx* is the appriviation for 'File System Index'.
+The **`fsidx`** program provides fast pathname searching using database files. *fsidx* is the abbreviation for 'File System Index'.
 
 ## Overview
 
@@ -58,7 +58,7 @@ The database files store all pathname and file sizes below the configured folder
 
 ### 3. Locate
 
-The **`locate`** subcommand quieries the database files for all configured folders. Images from the last hiking trip may for example be located with:
+The **`locate`** subcommand queries the database files for all configured folders. Images from the last hiking trip may for example be located with:
 
 ```shell
 $ fsidx locate 2023 hiking "*.jpg"
@@ -114,9 +114,9 @@ Setting the environment variable `INSTALL` to `sudo install` still executes all 
 
 ## Alternative Tools
 
-- The [find(1)] utility recursively descends the directory tree and prints pathnames matching the search criteria. *find* can not only search for matching file names, but for any file system level metadata. For repeated queries *find* is slower than just searching in the database files. *fsidx* queries are also more intuitive. *find* usually only provides glob patterns. Searching files on media curently not mounted is also not possible.
+- The [find(1)] utility recursively descends the directory tree and prints pathnames matching the search criteria. *find* can not only search for matching file names, but for any file system level metadata. For repeated queries *find* is slower than just searching in the database files. *fsidx* queries are also more intuitive. *find* usually only provides glob patterns. Searching files on media currently not mounted is also not possible.
 
-- The [locate(1)] program also searches a database for all pathnames which match a specified pattern. In that sense *locate* is a very similar program. *fsidx* provides additional features and more intuitve queries.
+- The [locate(1)] program also searches a database for all pathnames which match a specified pattern. In that sense *locate* is a very similar program. *fsidx* provides additional features and more intuitive queries.
 
 [find(1)]:https://linux.die.net/man/1/find
 [locate(1)]:https://linux.die.net/man/1/locate

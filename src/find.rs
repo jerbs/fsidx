@@ -198,7 +198,7 @@ impl FindExt for &str {
             }
         };
 
-        // Here self contains atleast one character.
+        // Here self contains at least one character.
         let mut it = self[previous..].chars();
         let ch1 = it.next().unwrap();
         let mut ch1 = Features::new(ch1);
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_case_sensitive_multibyte() {
+    fn test_find_case_sensitive_multi_byte() {
         assert_eq!("ööö".find_case_sensitive(0, ""), Some(0..0));
         assert_eq!("ööö ööÖ ööÖ".find_case_sensitive(0, "öÖö"), None);
         assert_eq!("ööö ööö".find_case_sensitive(0, "ööö"), Some(0..6));
@@ -299,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_case_sensitive_multibyte_with_start_offset() {
+    fn test_find_case_sensitive_multi_byte_with_start_offset() {
         assert_eq!("ööö".find_case_sensitive(6, ""), Some(6..6));
         assert_eq!("ööö ööÖ ööÖ".find_case_sensitive(6, "öÖö"), None);
         assert_eq!("ööö ööö ööö".find_case_sensitive(6, "ööö"), Some(7..13));
@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_case_insensitive_multibyte() {
+    fn test_find_case_insensitive_multi_byte() {
         assert_eq!("ööö".find_case_insensitive(0, ""), Some(0..0));
         assert_eq!("aaa öÖä aöÖ".find_case_insensitive(0, "ÖÖÖ"), None);
         assert_eq!("Ööö Ööö".find_case_insensitive(0, "ÖÖÖ"), Some(0..6));
@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_case_insensitive_multibyte_with_start_offset() {
+    fn test_find_case_insensitive_multi_byte_with_start_offset() {
         assert_eq!("ööö".find_case_insensitive(6, ""), Some(6..6));
         assert_eq!("aaa öÖä aöÖ".find_case_insensitive(6, "ÖÖÖ"), None);
         assert_eq!("Ööö Ööö".find_case_insensitive(6, "ÖÖÖ"), Some(7..13));

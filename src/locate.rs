@@ -225,7 +225,7 @@ impl Display for LocateError {
                 path.to_string_lossy()
             )),
             LocateError::Aborted => f.write_str("Aborted"),
-            LocateError::BrokenPipe => f.write_str("Boken pipe"),
+            LocateError::BrokenPipe => f.write_str("Broken pipe"),
             LocateError::GlobPatternError(glob, err) => {
                 f.write_fmt(format_args!("Glob pattern error for `{}`: {}", glob, err))
             }

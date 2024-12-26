@@ -18,7 +18,7 @@ type GroupedVolumes = Vec<Vec<VolumeInfo>>;
 pub enum UpdateEvent {
     /// Starts scanning a configured folder.
     Scanning(PathBuf),
-    /// Finishs scanning a configured folder.
+    /// Finished scanning a configured folder.
     ScanningFinished(PathBuf),
     /// Scanning failed. Database for this folder was not updated.
     ScanningFailed(PathBuf),
@@ -37,7 +37,7 @@ pub enum UpdateEvent {
 /// The update function recursively scans multiple folders and updates database
 /// files with the retrieved information.
 ///
-/// Settings define which information is written into the databas files.
+/// Settings define which information is written into the database files.
 ///
 /// The implementations uses multiple threads to scan folders on different
 /// physical devices in parallel.
@@ -236,7 +236,7 @@ mod tests {
             compare(&OsString::from("foo2"), &OsString::from("foo10")),
             Ordering::Less
         );
-        // lexical_sort::natural_lexical_cmp panicks with these large numbers:
+        // lexical_sort::natural_lexical_cmp panics with these large numbers:
         assert_eq!(
             compare(
                 &OsString::from("foo123456789012345678901234"),

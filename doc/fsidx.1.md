@@ -1,6 +1,6 @@
 % FSIDX(1) fsidx 0.1.0
 % Joachim Erbs
-% June 30, 2024
+% December 26, 2024
 
 # NAME
 fsidx - find filenames quickly
@@ -54,12 +54,12 @@ The **locate** subcommand uses a search query to find matching path names in the
 
     - **`[`**ab**`]`** matches a or b where a and b are characters. Use **`[!`**ab**`]`** to match any character except for a and b.
 
-    - Metacharacters such as **`*`** and **`?`** can be escaped with character class notation. e.g., **`[*]`** matches **`*`**.
+    - Meta characters such as **`*`** and **`?`** can be escaped with character class notation. e.g., **`[*]`** matches **`*`**.
 
     - When backslash escapes are enabled, a backslash (**`\`**) will escape all meta characters in a glob. If it precedes a non-meta character, then the slash is ignored. A **`\\`** will match a literal **`\`**.
 
 **Options**
-:   Single character short options start with a single leading dash. Long options start with two leading dashs. Short options with a single leading slash can be combined. 
+:   Single character short options start with a single leading dash. Long options start with two leading dashes. Short options with a single leading slash can be combined. 
 
 **locate** supports the following options:
 
@@ -70,10 +70,10 @@ The **locate** subcommand uses a search query to find matching path names in the
 :   Case-insensitive matching for plain text and glob patterns.
 
 **`-a`**, **`--any-order`** (default)
-:   Searching for subsequent plain text elements always starts at the beginning. Esentially, this means that plain text elements may appear in any order in the path name.
+:   Searching for subsequent plain text elements always starts at the beginning. Essentially, this means that plain text elements may appear in any order in the path name.
 
 **`-o`**, **`--same-order`**
-:   Searching for subsequent plain text elements always starts after the previous match. Esentially, this means that plain text elements must occurr in the same order in the path name.
+:   Searching for subsequent plain text elements always starts after the previous match. Essentially, this means that plain text elements must occur in the same order in the path name.
 
 **`-w`**, **`--whole-path`** (default)
 :   Plain text and glob patterns are applied on the while path name starting from root.
@@ -88,7 +88,7 @@ The **locate** subcommand uses a search query to find matching path names in the
 :   Spaces in quoted plain text are handled as every other character. Also no special handling for CamelCase query text.
 
 **`-b`**, **`--word-boundary`**
-:   Enables that tokens must start and end on word boundaries. Letters and numbers are evaluated. If a token starts/ends with a letter the preceeding/succeeding character in a match must not be a letter. The same is true for numbers. A number next to a letter is considered as a word boundary. An upper case letter following on a lower case letter is considered as a word boundary.
+:   Enables that tokens must start and end on word boundaries. Letters and numbers are evaluated. If a token starts/ends with a letter the preceding/succeeding character in a match must not be a letter. The same is true for numbers. A number next to a letter is considered as a word boundary. An upper case letter following on a lower case letter is considered as a word boundary.
 
 **`-B`**, **`--no-word-boundary`**
 :   Disables matching on word boundaries only.
@@ -100,7 +100,7 @@ The **locate** subcommand uses a search query to find matching path names in the
 :   In glob patterns wildcards (*) match path separators (/).
 
 **`-0`**, **`--auto`** (default)
-:   Autodetection if an element is a plain text or a glob pattern. 
+:   Autodetect if an element is a plain text or a glob pattern. 
 
 **`-1`**, **`--plain`**
 :   All none option elements are handled as plain text.
@@ -129,15 +129,15 @@ In addition to search queries the **fsidx** shell accepts backslash commands:
 :    The **update** command scans folders defined in the configuration file and updates the database files. It is the same as the **UPDATE** subcommand.
 
 **`\h`**
-:    The **help** command prints a cheatsheet with commands available in the **fsidx** shell. 
+:    The **help** command prints a cheat sheet with commands available in the **fsidx** shell. 
 
 The open command **`\o`** accepts the following arguments:
 
 **`nnn.`**
-:   nnn is any of the indicees printed with the last query results. An arbitrary number of indicees can be references. The referenced file or directory is opened with the default application.
+:   nnn is any of the indices printed with the last query results. An arbitrary number of indices can be references. The referenced file or directory is opened with the default application.
 
 **`nnn.-mmm.`**
-:   nnn and mmm are are indicees printed with the last query results. All files and directories in the range are opened with their default applications.
+:   nnn and mmm are are indices printed with the last query results. All files and directories in the range are opened with their default applications.
 
 **`glob`**
 :   glob is any glob pattern. The glob pattern is applied on the results of the last query. All matching files and directories are opened with their default applications.
@@ -219,7 +219,7 @@ Pitfalls:
 :   With default options this will never return any results. The expression is detected as a glob pattern due to the brackets. Glob pattern must match the whole path by default. Since all pathnames are absolute, i.e. starting with a backslash, nothing will match. Explicitly switch to plain text mode in order to find all pathnames containing brackets. E.g **`--plain [0]`**.
 
 **`?`**
-:   With default options this will never return any results. The expression is again detected as a glob pattern. In this case due to the question mark. It will never match an absolute pathname starting with a slash. **`-l ?`** finds all single character file names. **`--plain ?`** finds all pahnames containing a question mark.
+:   With default options this will never return any results. The expression is again detected as a glob pattern. In this case due to the question mark. It will never match an absolute pathname starting with a slash. **`-l ?`** finds all single character file names. **`--plain ?`** finds all pathnames containing a question mark.
 
 **`*`**
 :   By default the asterisk is detected as a glob expression. As a result all database entries are printed. Use **`--plain *`** to get all pathnames containing the asterisk character.
@@ -259,4 +259,4 @@ Pitfalls:
 fsidx.toml(5), locate(1)
 
 # COPYRIGHT
-Copyright ©  2023-2024 Joachim Erbs
+Copyright © 2023-2024 Joachim Erbs
