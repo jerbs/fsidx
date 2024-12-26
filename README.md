@@ -29,7 +29,7 @@ The [fsidx(1)] man page contains a detailed description of all features.
 
 [fsidx(1)]:https://github.com/jerbs/fsidx/blob/master/doc/fsidx.1.md
 
-Using **`fsidx`** is a 3 step process: (1) Configure, (1) Update, (3) Locate.
+Using **`fsidx`** is a 3 step process: (1) Configure, (2) Update, (3) Locate.
 
 ### 1. Configure
 
