@@ -14,16 +14,15 @@ INSTALL_DATA ?= $(INSTALL)
 .PHONY: all clean clean-man default \
 		fsidx doc fsidx.1 fsidx.toml.5 \
 		view.doc view.fsidx view.fsidx.toml \
-		target/release/fsidx-cli \
-		check-identical-files \
+		target/release/fsidx \
 		install man test uninstall
 
-all: fsidx test doc man check-identical-files
+all: fsidx test doc man
 
-fsidx: target/release/fsidx-cli
+fsidx: target/release/fsidx
 
-target/release/fsidx-cli:
-	cargo build --release
+target/release/fsidx:
+	cargo build --features="cli" --release
 
 test:
 	cargo test
@@ -32,7 +31,7 @@ doc:
 	cargo doc
 
 install: fsidx test man
-	$(INSTALL_PROGRAM) target/release/fsidx-cli $(DESTDIR)$(bindir)/fsidx
+	$(INSTALL_PROGRAM) target/release/fsidx $(DESTDIR)$(bindir)/fsidx
 	$(INSTALL_DATA) -d  $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) -d  $(DESTDIR)$(man5dir)
 	$(INSTALL_DATA) target/man/man1/fsidx.1 $(DESTDIR)$(man1dir)/fsidx.1
@@ -53,11 +52,11 @@ man: fsidx.1 fsidx.toml.5
 fsidx.1: target/man/man1/fsidx.1
 fsidx.toml.5: target/man/man5/fsidx.toml.5
 
-target/man/man1/fsidx.1: cli/doc/fsidx.1.md
+target/man/man1/fsidx.1: doc/fsidx.1.md
 	mkdir -p $(dir $@)
 	pandoc -s -t man -o $@ $<
 
-target/man/man5/fsidx.toml.5: cli/doc/fsidx.toml.5.md
+target/man/man5/fsidx.toml.5: doc/fsidx.toml.5.md
 	mkdir -p $(dir $@)
 	pandoc -s -t man -o $@ $<
 
@@ -69,7 +68,3 @@ view.fsidx.toml: fsidx.toml.5
 
 view.doc:
 	cargo doc --open
-
-check-identical-files:
-	@cmp LICENSE cli/LICENSE
-	@cmp LICENSE fsidx/LICENSE

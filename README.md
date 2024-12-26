@@ -27,7 +27,7 @@ Main features are:
 
 The [fsidx(1)] man page contains a detailed description of all features.
 
-[fsidx(1)]:https://github.com/jerbs/fsidx/blob/master/cli/doc/fsidx.1.md
+[fsidx(1)]:https://github.com/jerbs/fsidx/blob/master/doc/fsidx.1.md
 
 Using **`fsidx`** is a 3 step process: (1) Configure, (1) Update, (3) Locate.
 
@@ -43,7 +43,7 @@ folder = [
 ]
 ```
 
-[fsidx.toml(5)]:https://github.com/jerbs/fsidx/blob/master/cli/doc/fsidx.toml.5.md
+[fsidx.toml(5)]:https://github.com/jerbs/fsidx/blob/master/doc/fsidx.toml.5.md
 [TOML]:https://toml.io/
 
 ### 2. Update
@@ -123,10 +123,7 @@ Setting the environment variable `INSTALL` to `sudo install` still executes all 
 
 ## Changelog
 
-The fsidx repository contains multiple crates. Each crate has its own changelog.
-
- * `fsidx` - [view changelog](https://github.com/jerbs/fsidx/blob/master/fsidx/CHANGELOG.md)
- * `fsidx-cli` - [view changelog](https://github.com/jerbs/fsidx/blob/master/cli/CHANGELOG.md)
+[view changelog](https://github.com/jerbs/fsidx/blob/master/CHANGELOG.md)
 
 ## License
 

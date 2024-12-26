@@ -11,8 +11,8 @@
             "cargo": {
                 "args": [
                     "build",
-                    "--bin", "fsidx",
-                    "--package", "fsidx-cli"
+                    "--features=cli",
+                    "--bin", "fsidx"
                 ]
             },
             "args": ["shell"],

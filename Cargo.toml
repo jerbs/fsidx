@@ -1,11 +1,48 @@
-[workspace]
-resolver = "2"
-members = ["cli", "fsidx"]
+[package]
+name = "fsidx"
+version = "0.1.0"
+edition = "2021"
+authors = ["joachim.erbs@gmx.de"]
+license = "MIT"
+description = "Finding file names quickly with a database."
+categories = ["command-line-utilities", "filesystem"]
+keywords = ["locate"]
 
-[workspace.dependencies]
+[[bin]]
+name = "fsidx"
+path = "src/cli/main.rs"
+required-features = ["cli"]
+
+[dependencies]
+fastvlq = "1.1.1"
 globset = "0.4.11"
+natord = "1.0.9"
 nix = { version = "0.29.0", features = [ "fs", "term" ] }
+num_cpus = "1.13.1"
+num_enum = "0.7.3"
 serde = { version = "1.0.133", features = ["derive"] }
+threadpool = "1.8.1"
+walkdir = "2.3.1"
 
-[patch.crates-io]
-fsidx = { path = 'fsidx' }
+# Binary only dependencies:
+clap = { version = "4.3.11", optional = true }
+indoc = {version = "2.0.2", optional = true }
+libc = {version = "0.2.117", optional = true }
+nom = {version = "7.1.3", optional = true }
+rustyline = { version = "15.0.0", features = ["derive"], optional = true }
+signal-hook = {version = "0.3.13", optional = true }
+termcolor = {version = "1.1.2", optional = true }
+toml = {version = "0.8.19", optional = true }
+
+
+[features]
+cli = [
+    "dep:clap",
+    "dep:indoc",
+    "dep:libc",
+    "dep:nom",
+    "dep:rustyline",
+    "dep:signal-hook",
+    "dep:termcolor",
+    "dep:toml"
+]
