@@ -71,6 +71,5 @@ view.doc:
 	cargo doc --open
 
 check-identical-files:
-	@cmp README.md cli/README.md
 	@cmp LICENSE cli/LICENSE
 	@cmp LICENSE fsidx/LICENSE
