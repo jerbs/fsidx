@@ -98,9 +98,19 @@ A glob pattern can also be used to open selected files from the last query resul
 
 The program supports Linux and MacOS. 
 
+To install `fsidx` into the home directory:
+
 ```shell
 $ make install prefix=$HOME
 ```
+
+To install `fsidx` into `/usr/local`:
+
+```shell
+$ INSTALL="sudo install" make install
+```
+
+Setting the environment variable `INSTALL` to `sudo install` still executes all build and test tools with the normal user and only the `install` command with root permissions.
 
 ## Alternative Tools
 
