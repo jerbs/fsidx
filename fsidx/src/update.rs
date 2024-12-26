@@ -42,9 +42,8 @@ pub enum UpdateEvent {
 /// The implementations uses multiple threads to scan folders on different
 /// physical devices in parallel.
 ///
-/// The function prints progress messages and error messages into [UpdateSink].
-/// This redirection allows the calling application to decide about how to
-/// display these messages.
+/// The provided closure is used to notify the caller about the scanning state
+/// and error.
 pub fn update<F: FnMut(UpdateEvent) -> IOResult<()>>(
     volume_info: Vec<VolumeInfo>,
     settings: Settings,
