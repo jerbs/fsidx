@@ -25,10 +25,10 @@ target/release/fsidx:
 	cargo build --features="cli" --release
 
 test:
-	cargo test
+	cargo test --features="cli"
 
 doc:
-	cargo doc
+	cargo doc --features="cli"
 
 install: fsidx test man
 	$(INSTALL_PROGRAM) target/release/fsidx $(DESTDIR)$(bindir)/fsidx
