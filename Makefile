@@ -15,7 +15,7 @@ INSTALL_DATA ?= $(INSTALL)
 		fsidx doc fsidx.1 fsidx.toml.5 \
 		view.doc view.fsidx view.fsidx.toml \
 		target/release/fsidx \
-		install man test uninstall
+		install install-only man test uninstall
 
 all: fsidx test doc man
 
@@ -30,7 +30,9 @@ test:
 doc:
 	cargo doc --features="cli"
 
-install: fsidx test man
+install: fsidx test man install-only
+
+install-only:
 	$(INSTALL_PROGRAM) target/release/fsidx $(DESTDIR)$(bindir)/fsidx
 	$(INSTALL_DATA) -d  $(DESTDIR)$(man1dir)
 	$(INSTALL_DATA) -d  $(DESTDIR)$(man5dir)
